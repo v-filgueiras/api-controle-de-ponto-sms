@@ -48,7 +48,7 @@ button { cursor: pointer; }
 
 .login-visual {
   min-height: 100vh;
-  background-image: url("assets/login-ilustracao.png");
+  background-image: url("static/assets/login-ilustracao.png");
   background-size: cover;
   background-position: 58% center;
   background-repeat: no-repeat;

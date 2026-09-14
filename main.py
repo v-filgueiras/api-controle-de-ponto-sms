@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from database.connect import Base, engine
 
-# Importa todos os models antes do create_all
 from models import (
     Users,
     Units,
@@ -26,8 +27,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Cria as tabelas que ainda não existirem no Supabase
 Base.metadata.create_all(bind=engine)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,6 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(units_router)
@@ -48,8 +50,14 @@ app.include_router(documents_router)
 app.include_router(history_log_router)
 
 
-@app.get("/", tags=["status"])
-def root():
-    return {
-        "message": "funcionando"
-    }
+# Arquivos do frontend
+app.mount(
+    "/static",
+    StaticFiles(directory="frontend"),
+    name="static",
+)
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    return FileResponse("frontend/index.html")
