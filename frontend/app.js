@@ -1,4 +1,195 @@
 
+const API_URL = "http://127.0.0.1:8000";
+const TOKEN_KEY = "sms-ponto-token";
+const USER_KEY = "sms-ponto-user";
+
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+async function api(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const token = getToken();
+
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers
+  });
+
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
+
+  let data = null;
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    data = await response.json();
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.detail || `Erro HTTP ${response.status}`);
+  }
+
+  return data;
+}
+
+function initials(name) {
+  return String(name || "U")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(p => p[0]?.toUpperCase())
+    .join("");
+}
+
+function roleTemplate(perfil, userData) {
+  const base = roles[perfil];
+  return {
+    ...base,
+    user: userData.name,
+    initials: initials(userData.name),
+    id: userData.id,
+    email: userData.email,
+    unit_id: userData.unit_id,
+    status: userData.status
+  };
+}
+
+function mapUser(u) {
+  const unit = state.units.find(x => x.id === u.unit_id);
+  return {
+    id: u.id,
+    nome: u.name,
+    email: u.email,
+    perfil: u.perfil === "admin" ? "Administrador" : u.perfil === "rh" ? "RH" : "Coordenador",
+    perfilRaw: u.perfil,
+    unit_id: u.unit_id,
+    unidade: unit?.name || "Secretaria Municipal de Saúde",
+    status: u.status ? "Ativo" : "Inativo"
+  };
+}
+
+function mapFechamento(f, unit) {
+  return {
+    id: unit.id,
+    fechamentoId: f.id,
+    name: unit.name,
+    coordinator: unit.coordinator || "—",
+    status: f.status,
+    competence: f.competence,
+    document: f.document ? {
+      id: f.document.id,
+      name: f.document.filename,
+      size: f.document.size_bytes
+    } : null,
+    signatureMethod: f.signature_method || "",
+    submittedAt: f.submitted_at ? new Date(f.submitted_at).toLocaleString("pt-BR") : "",
+    rhNote: f.rh_note || "",
+    rhDecisionAt: f.rh_decision_at ? new Date(f.rh_decision_at).toLocaleString("pt-BR") : "",
+    rows: f.rows || []
+  };
+}
+
+async function carregarDados() {
+  const unidadesApi = await api("/units");
+
+  state.units = unidadesApi.map(u => ({
+    id: u.id,
+    name: u.name,
+    coordinator: "—",
+    status: "nao_enviado",
+    competence: "—",
+    document: null,
+    signatureMethod: "",
+    submittedAt: "",
+    rhNote: "",
+    rhDecisionAt: "",
+    rows: [],
+    fechamentoId: null
+  }));
+
+  if (state.role === "admin" || state.role === "rh") {
+    try {
+      const usuarios = await api("/usuarios");
+      state.users = usuarios.map(mapUser);
+      state.units.forEach(unit => {
+        const coord = state.users.find(u => u.perfilRaw === "coordinator" && u.unit_id === unit.id);
+        if (coord) unit.coordinator = coord.nome;
+      });
+    } catch (e) {
+      console.warn("Não foi possível carregar usuários:", e);
+    }
+
+    try {
+      const aprovacoes = await api("/aprovacoes");
+      aprovacoes.forEach(f => {
+        const unitIndex = state.units.findIndex(u => u.id === f.unit_id);
+        if (unitIndex >= 0) {
+          state.units[unitIndex] = mapFechamento(f, state.units[unitIndex]);
+        }
+      });
+    } catch (e) {
+      console.warn("Não foi possível carregar aprovações:", e);
+    }
+  }
+
+  if (state.role === "coordinator" && state.user?.unit_id) {
+    const f = await api(`/unidades/${state.user.unit_id}/fechamento-atual`);
+    const unitIndex = state.units.findIndex(u => u.id === state.user.unit_id);
+    if (unitIndex >= 0) {
+      state.units[unitIndex].coordinator = state.user.user;
+      state.units[unitIndex] = mapFechamento(f, state.units[unitIndex]);
+    }
+  }
+
+  try {
+    const historico = await api("/historico");
+    state.historyLog = historico.map(h => ({
+      date: new Date(h.timestamp).toLocaleString("pt-BR"),
+      user: `Usuário #${h.user_id}`,
+      action: h.action,
+      unit: state.units.find(u => u.id === h.unit_id)?.name || "—",
+      competence: state.units.find(u => u.id === h.unit_id)?.competence || "—",
+      status: h.status_snapshot || "info"
+    }));
+  } catch (e) {
+    console.warn("Histórico não carregado:", e);
+  }
+}
+
+async function fazerLogin(email, senha) {
+  const form = new URLSearchParams();
+  form.set("username", email);
+  form.set("password", senha);
+
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.detail || "E-mail ou senha incorretos.");
+  }
+
+  localStorage.setItem(TOKEN_KEY, data.access_token);
+
+  // O backend retorna os dados do usuário junto do token.
+  const userData = data.user;
+  if (!userData) {
+    throw new Error("Não foi possível carregar os dados do usuário autenticado.");
+  }
+
+  localStorage.setItem(USER_KEY, JSON.stringify(userData));
+  return userData;
+}
+
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -78,29 +269,16 @@ const state = {
 const STORAGE_KEY = "sms-ponto-app-state-v1";
 
 function persist() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      units: state.units,
-      historyLog: state.historyLog,
-      users: state.users
-    }));
-  } catch (e) { /* localStorage indisponível — segue apenas em memória */ }
+  // Dados permanentes agora são salvos no backend.
 }
 
 function loadPersisted() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    if (data.units?.length) state.units = data.units;
-    if (data.historyLog?.length) state.historyLog = data.historyLog;
-    if (data.users?.length) state.users = data.users;
-  } catch (e) { /* dado corrompido — mantém o estado inicial */ }
+  // Mantido por compatibilidade; o carregamento real vem da API.
 }
 
 function resetDemoData() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
-  location.reload();
+  localStorage.removeItem(STORAGE_KEY);
+  toast("Os dados do sistema permanecem armazenados com segurança.", "success");
 }
 
 function myUnit() {
@@ -203,9 +381,10 @@ function closeModal() {
   $("#modalRoot").innerHTML = "";
 }
 
-function setLogin(role) {
-  state.role = role;
-  state.user = roles[role];
+async function setLoginFromUser(userData) {
+  state.role = userData.perfil;
+  state.user = roleTemplate(userData.perfil, userData);
+
   $("#loginView").classList.add("hidden");
   $("#appView").classList.remove("hidden");
 
@@ -215,12 +394,21 @@ function setLogin(role) {
   $("#topAvatar").textContent = state.user.initials;
 
   renderNav();
-  navigate("dashboard");
+
+  try {
+    await carregarDados();
+    navigate("dashboard");
+  } catch (e) {
+    console.error(e);
+    toast(e.message || "Erro ao carregar dados do sistema.", "error");
+  }
 }
 
 function logout() {
   state.role = null;
   state.user = null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   $("#appView").classList.add("hidden");
   $("#loginView").classList.remove("hidden");
   $("#loginPassword").value = "";
@@ -474,7 +662,7 @@ function adminDashboard() {
     <div class="grid grid--2" style="margin-top:16px">
       <div class="card">
         <div class="section-head">
-          <div><h3>Hierarquia de acesso</h3><p>Regra geral do protótipo</p></div>
+          <div><h3>Hierarquia de acesso</h3><p>Perfis e responsabilidades</p></div>
         </div>
         <div class="card-pad">
           <div class="timeline">
@@ -505,12 +693,12 @@ function adminDashboard() {
 
       <div class="card">
         <div class="section-head">
-          <div><h3>Regras importantes</h3><p>Frontend preparado para o backend validar</p></div>
+          <div><h3>Regras importantes</h3><p>Regras de acesso</p></div>
         </div>
         <div class="card-pad grid" style="gap:10px">
-          <div class="notice notice--info">O perfil do usuário deve vir do backend. O usuário não escolhe o próprio nível de acesso.</div>
-          <div class="notice">Cada coordenador deve estar vinculado a uma única unidade ou a uma lista explícita de unidades permitidas.</div>
-          <div class="notice">A aprovação deve registrar usuário, data/hora, decisão e justificativa quando houver devolução.</div>
+          <div class="notice notice--info">O perfil de acesso é definido pela administração do sistema e não pode ser alterado pelo próprio usuário.</div>
+          <div class="notice">Cada coordenador acessa somente a unidade vinculada ao seu cadastro.</div>
+          <div class="notice">Toda decisão do RH fica registrada com responsável, data, situação e justificativa quando necessária.</div>
         </div>
       </div>
     </div>
@@ -696,7 +884,7 @@ function pointView() {
         <div class="section-head">
           <div>
             <h3>Regras para envio</h3>
-            <p>Checklist automático do frontend</p>
+            <p>Validação antes do envio</p>
           </div>
         </div>
         <div class="card-pad">
@@ -849,7 +1037,7 @@ function bindPointPage() {
 
   $("#confirmTruth")?.addEventListener("change", refreshPointValidationUI);
 
-  $("#saveDraftBtn")?.addEventListener("click", () => toast("Rascunho salvo localmente no protótipo.", "success"));
+  $("#saveDraftBtn")?.addEventListener("click", () => toast("Dados do fechamento atualizados.", "success"));
   $("#validateBtn")?.addEventListener("click", () => validatePoint(true));
   $("#previewBtn")?.addEventListener("click", previewPoint);
   $("#submitPointBtn")?.addEventListener("click", submitPoint);
@@ -861,7 +1049,7 @@ function handleFile(file) {
     toast("Selecione um arquivo PDF.", "error");
     return;
   }
-  state.uploadedFile = { name: file.name, size: file.size };
+  state.uploadedFile = file;
   $("#filePreview").innerHTML = filePreviewHtml();
   $("#removeFileBtn")?.addEventListener("click", () => {
     state.uploadedFile = null;
@@ -923,7 +1111,7 @@ function previewPoint() {
   openModal({
     title: "Pré-visualização do fechamento",
     content: `
-      <div class="notice notice--info">Esta é uma prévia resumida. No backend, a exportação pode gerar o PDF completo para assinatura.</div>
+      <div class="notice notice--info">Confira abaixo um resumo dos dados informados antes de prosseguir com o envio.</div>
       <div class="kv" style="margin:16px 0">
         <span>Unidade</span><strong>${escapeHtml(myUnit().name)}</strong>
         <span>Competência</span><strong>${escapeHtml($("#competence")?.value || "")}</strong>
@@ -941,17 +1129,18 @@ function previewPoint() {
 
 function submitPoint() {
   if (!validatePoint(true)) return;
+
   openModal({
     title: "Confirmar envio ao RH",
     content: `
       <div class="notice notice--warning">
-        Após o envio, o fechamento deverá ficar bloqueado para edição até que o RH aprove ou devolva para correção.
+        Após o envio, o fechamento ficará bloqueado para edição até que o RH aprove ou devolva para correção.
       </div>
       <div class="kv" style="margin-top:16px">
         <span>Unidade</span><strong>${escapeHtml(myUnit().name)}</strong>
-        <span>Competência</span><strong>${escapeHtml($("#competence")?.value || "")}</strong>
+        <span>Competência</span><strong>${escapeHtml(myUnit().competence)}</strong>
         <span>Documento</span><strong>${escapeHtml(state.uploadedFile?.name || "")}</strong>
-        <span>Assinatura</span><strong>${escapeHtml($("#signatureMethod")?.selectedOptions[0]?.text || "")}</strong>
+        <span>Assinatura</span><strong>${signatureLabel(state.signatureMethod)}</strong>
       </div>
     `,
     actions: `
@@ -959,21 +1148,57 @@ function submitPoint() {
       <button class="btn btn--primary" id="confirmSubmitBtn">Confirmar envio</button>
     `
   });
+
   $("[data-modal-close2]")?.addEventListener("click", closeModal);
-  $("#confirmSubmitBtn")?.addEventListener("click", () => {
+
+  $("#confirmSubmitBtn")?.addEventListener("click", async () => {
     const unit = myUnit();
-    unit.rows = state.pointRows;
-    unit.document = state.uploadedFile;
-    unit.signatureMethod = state.signatureMethod;
-    unit.competence = $("#competence")?.value || unit.competence;
-    unit.status = "pendente";
-    unit.submittedAt = new Date().toLocaleString("pt-BR");
-    unit.rhNote = "";
-    logHistory("Submeteu fechamento", unit, "pendente");
-    persist();
-    closeModal();
-    toast("Fechamento enviado ao RH com sucesso.", "success");
-    navigate("dashboard");
+
+    try {
+      const rows = state.pointRows.map(r => ({
+        ...r,
+        dt: Number(r.dt || 0),
+        bh: Number(r.bh || 0),
+        he: Number(r.he || 0),
+        an: Number(r.an || 0),
+        gr: Number(r.gr || 0),
+        ins: Number(r.ins || 0),
+        at: Number(r.at || 0),
+        observacao: r.observacao || "Sem observação"
+      }));
+
+      await api(`/fechamentos/${unit.fechamentoId}/rows`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows })
+      });
+
+      if (state.uploadedFile instanceof File) {
+        const formData = new FormData();
+        formData.append("file", state.uploadedFile);
+
+        await api(`/fechamentos/${unit.fechamentoId}/documento`, {
+          method: "POST",
+          body: formData
+        });
+      } else if (!unit.document) {
+        throw new Error("Selecione o PDF assinado antes de enviar.");
+      }
+
+      await api(`/fechamentos/${unit.fechamentoId}/submeter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature_method: state.signatureMethod })
+      });
+
+      closeModal();
+      toast("Fechamento enviado ao RH com sucesso.", "success");
+      await carregarDados();
+      navigate("dashboard");
+    } catch (e) {
+      console.error(e);
+      toast(e.message || "Erro ao enviar fechamento.", "error");
+    }
   });
 }
 
@@ -1180,7 +1405,7 @@ function usersView() {
     <div class="page-intro">
       <div>
         <h1>Usuários e hierarquia</h1>
-        <p>Cadastre perfis e defina o vínculo entre coordenadores e unidades. As permissões devem ser aplicadas também no backend.</p>
+        <p>Cadastre usuários, defina perfis de acesso e vincule coordenadores às respectivas unidades.</p>
       </div>
       <div class="actions">
         <button class="btn btn--primary" id="newUserBtn">+ Novo usuário</button>
@@ -1287,13 +1512,8 @@ function profileView() {
       </div>
       <div class="card card-pad">
         <h3 style="margin-top:0">Segurança</h3>
-        <div class="notice">No sistema real, autenticação, expiração de sessão, redefinição de senha e permissões devem ser controladas pelo backend.</div>
+        <div class="notice">Sua sessão é protegida por autenticação. Mantenha suas credenciais de acesso em segurança.</div>
         <button class="btn btn--outline" style="margin-top:14px">Alterar senha</button>
-      </div>
-      <div class="card card-pad">
-        <h3 style="margin-top:0">Dados de demonstração</h3>
-        <div class="notice">Este protótipo salva os dados no navegador (localStorage) para você não perder o que testou ao recarregar a página.</div>
-        <button id="resetDemoBtn" class="btn btn--outline" style="margin-top:14px">Reiniciar dados de demonstração</button>
       </div>
     </div>
   `;
@@ -1312,28 +1532,44 @@ function bindCurrentPage() {
     });
   });
 
-  $$("[data-decision]").forEach(btn => btn.addEventListener("click", () => {
+  $$("[data-decision]").forEach(btn => btn.addEventListener("click", async () => {
     const note = $("#reviewNote")?.value.trim();
     const decision = btn.dataset.decision;
+
     if (decision !== "approved" && !note) {
       $("#reviewNote").classList.add("input-error");
       toast("Informe a justificativa para correção ou rejeição.", "error");
       return;
     }
+
     const unit = state.units.find(u => u.id === Number(btn.dataset.unit));
-    if (unit) {
-      unit.status = decision === "approved" ? "aprovado" : decision === "rejected" ? "rejeitado" : "correcao";
-      unit.rhNote = decision === "approved" ? "" : note;
-      unit.rhDecisionAt = new Date().toLocaleString("pt-BR");
-      logHistory(
-        decision === "approved" ? "Aprovou fechamento" : decision === "rejected" ? "Rejeitou fechamento" : "Solicitou correção",
-        unit,
-        unit.status
-      );
-      persist();
+    if (!unit?.fechamentoId) {
+      toast("Fechamento não encontrado.", "error");
+      return;
     }
-    toast(decision === "approved" ? "Fechamento aprovado." : "Decisão registrada e devolvida ao coordenador.", "success");
-    navigate("approvals");
+
+    try {
+      await api(`/fechamentos/${unit.fechamentoId}/decisao`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          note: decision === "approved" ? null : note
+        })
+      });
+
+      toast(
+        decision === "approved"
+          ? "Fechamento aprovado."
+          : "Decisão registrada e devolvida ao coordenador.",
+        "success"
+      );
+
+      await carregarDados();
+      navigate("approvals");
+    } catch (e) {
+      toast(e.message || "Erro ao registrar decisão.", "error");
+    }
   }));
 
   $("#openDocBtn")?.addEventListener("click", () => {
@@ -1341,11 +1577,11 @@ function bindCurrentPage() {
       title: "Documento assinado",
       content: `
         <div class="notice notice--info">
-          No frontend de produção, este botão pode abrir o PDF em um visualizador seguro ou gerar uma URL temporária fornecida pelo backend.
+          Documento anexado ao fechamento selecionado.
         </div>
         <div class="file-preview" style="margin-top:14px">
           <div class="file-icon">PDF</div>
-          <div><strong>Documento de fechamento assinado</strong><span>Arquivo de demonstração</span></div>
+          <div><strong>Documento de fechamento assinado</strong><span>Documento do fechamento</span></div>
         </div>
       `
     });
@@ -1353,18 +1589,6 @@ function bindCurrentPage() {
 
   $("#newUserBtn")?.addEventListener("click", openNewUserModal);
   $("#newUnitBtn")?.addEventListener("click", openNewUnitModal);
-  $("#resetDemoBtn")?.addEventListener("click", () => {
-    openModal({
-      title: "Reiniciar dados de demonstração",
-      content: `<div class="notice notice--warning">Isso vai apagar tudo que foi preenchido, submetido ou aprovado no protótipo e voltar aos dados de exemplo iniciais. Não afeta nenhum sistema real.</div>`,
-      actions: `
-        <button class="btn btn--outline" data-cancel>Cancelar</button>
-        <button class="btn btn--danger" id="confirmResetBtn">Reiniciar</button>
-      `
-    });
-    $("[data-cancel]")?.addEventListener("click", closeModal);
-    $("#confirmResetBtn")?.addEventListener("click", resetDemoData);
-  });
   $$("[data-edit-user]").forEach(btn => btn.addEventListener("click", () => openEditUserModal(Number(btn.dataset.editUser))));
 }
 
@@ -1374,7 +1598,7 @@ function openNewUserModal() {
     content: `
       <div class="grid grid--2">
         <label class="field" style="margin-top:0"><span>Nome completo <b>*</b></span><input id="mName" /></label>
-        <label class="field" style="margin-top:0"><span>E-mail <b>*</b></span><input id="mEmail" type="email" /></label>
+        <label class="field" style="margin-top:0"><span>E-mail <b>*</b></span><input id="mEmail" type="email" /></label>\n        <label class="field"><span>Senha inicial <b>*</b></span><input id="mPassword" type="password" minlength="8" /></label>
         <label class="field"><span>Perfil <b>*</b></span>
           <select id="mRole">
             <option value="">Selecione...</option>
@@ -1399,17 +1623,44 @@ function openNewUserModal() {
     `
   });
   $("[data-cancel]")?.addEventListener("click", closeModal);
-  $("#saveUserBtn")?.addEventListener("click", () => {
-    const values = ["#mName","#mEmail","#mRole","#mUnit"].map(sel => $(sel).value.trim());
-    if (values.some(v => !v)) {
+  $("#saveUserBtn")?.addEventListener("click", async () => {
+    const name = $("#mName").value.trim();
+    const email = $("#mEmail").value.trim();
+    const password = $("#mPassword").value;
+    const roleLabel = $("#mRole").value;
+    const unitName = $("#mUnit").value;
+
+    if (!name || !email || !password || !roleLabel || !unitName) {
       toast("Preencha todos os campos obrigatórios.", "error");
       return;
     }
-    state.users.push({ nome: values[0], email: values[1], perfil: values[2], unidade: values[3], status: "Ativo" });
-    persist();
-    closeModal();
-    toast("Usuário cadastrado.", "success");
-    navigate("users");
+
+    const perfil =
+      roleLabel === "Administrador" ? "admin" :
+      roleLabel === "RH" ? "rh" : "coordinator";
+
+    const selectedUnit = state.units.find(u => u.name === unitName);
+    const unit_id = perfil === "coordinator" ? selectedUnit?.id : null;
+
+    if (perfil === "coordinator" && !unit_id) {
+      toast("Selecione uma unidade válida para o coordenador.", "error");
+      return;
+    }
+
+    try {
+      await api("/usuarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, perfil, unit_id })
+      });
+
+      closeModal();
+      toast("Usuário cadastrado.", "success");
+      await carregarDados();
+      navigate("users");
+    } catch (e) {
+      toast(e.message || "Erro ao cadastrar usuário.", "error");
+    }
   });
 }
 
@@ -1451,39 +1702,44 @@ function openNewUnitModal() {
   openModal({
     title: "Nova unidade",
     content: `
-      <label class="field" style="margin-top:0"><span>Nome da unidade <b>*</b></span><input id="unitName" placeholder="Ex.: USF ..." /></label>
-      <label class="field"><span>Coordenador responsável <b>*</b></span><input id="unitCoordinator" placeholder="Nome do coordenador" /></label>
+      <label class="field" style="margin-top:0">
+        <span>Nome da unidade <b>*</b></span>
+        <input id="unitName" placeholder="Ex.: USF ..." />
+      </label>
+      <div class="notice notice--info" style="margin-top:16px">
+        O coordenador é vinculado à unidade no cadastro do usuário.
+      </div>
     `,
     actions: `
       <button class="btn btn--outline" data-cancel>Cancelar</button>
       <button class="btn btn--primary" id="saveUnitBtn">Salvar unidade</button>
     `
   });
+
   $("[data-cancel]")?.addEventListener("click", closeModal);
-  $("#saveUnitBtn")?.addEventListener("click", () => {
+
+  $("#saveUnitBtn")?.addEventListener("click", async () => {
     const name = $("#unitName").value.trim();
-    const coordinator = $("#unitCoordinator").value.trim();
-    if (!name || !coordinator) {
-      toast("Preencha os campos obrigatórios.", "error");
+
+    if (!name) {
+      toast("Informe o nome da unidade.", "error");
       return;
     }
-    state.units.push({
-      id: Date.now(),
-      name,
-      coordinator,
-      status: "nao_enviado",
-      competence: "SETEMBRO/2026",
-      document: null,
-      signatureMethod: "",
-      submittedAt: "",
-      rhNote: "",
-      rhDecisionAt: "",
-      rows: []
-    });
-    persist();
-    closeModal();
-    toast("Unidade cadastrada.", "success");
-    navigate("units");
+
+    try {
+      await api("/units", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+
+      closeModal();
+      toast("Unidade cadastrada.", "success");
+      await carregarDados();
+      navigate("units");
+    } catch (e) {
+      toast(e.message || "Erro ao cadastrar unidade.", "error");
+    }
   });
 }
 
@@ -1513,23 +1769,44 @@ function escapeHtml(value) {
 
 loadPersisted();
 
-$("#loginForm").addEventListener("submit", e => {
+$("#loginForm").addEventListener("submit", async e => {
   e.preventDefault();
-  if (!$("#loginEmail").value || !$("#loginPassword").value) {
+
+  const email = $("#loginEmail").value.trim();
+  const password = $("#loginPassword").value;
+
+  if (!email || !password) {
     toast("Informe e-mail e senha.", "error");
     return;
   }
-  setLogin("coordinator");
+
+  try {
+    const userData = await fazerLogin(email, password);
+    await setLoginFromUser(userData);
+  } catch (e) {
+    console.error(e);
+    toast(e.message || "Não foi possível entrar.", "error");
+  }
 });
 
-$$(".demo-user").forEach(btn => btn.addEventListener("click", () => {
-  const role = btn.dataset.role;
-  $("#loginEmail").value =
-    role === "coordinator" ? "coordenador@saude.gov.br" :
-    role === "rh" ? "rh@saude.gov.br" : "admin@saude.gov.br";
-  $("#loginPassword").value = "demonstracao";
-  setLogin(role);
-}));
+$$(".demo-user").forEach(btn => {
+  btn.style.display = "none";
+});
+
+(async function restaurarSessao() {
+  const token = getToken();
+  const rawUser = localStorage.getItem(USER_KEY);
+
+  if (!token || !rawUser) return;
+
+  try {
+    const userData = JSON.parse(rawUser);
+    await setLoginFromUser(userData);
+  } catch (e) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
+})();
 
 $("#togglePassword").addEventListener("click", () => {
   const p = $("#loginPassword");

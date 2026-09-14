@@ -4,85 +4,70 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Controle de Ponto | Secretaria Municipal de Saúde</title>
-  <meta name="description" content="Protótipo frontend para fechamento e aprovação de ponto das unidades de saúde." />
+  <meta name="description" content="Sistema de controle, fechamento e aprovação de ponto da Secretaria Municipal de Saúde." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <section id="loginView" class="login-shell">
-    <div class="login-visual">
-      <div class="brand brand--light">
-        <div class="brand-mark">SMS</div>
-        <div>
-          <strong>Secretaria Municipal de Saúde</strong>
-          <span>Controle de Ponto</span>
-        </div>
-      </div>
-
-      <div class="login-copy">
-        <span class="eyebrow eyebrow--light">Gestão de frequência</span>
-        <h1>Fechamento de ponto com fluxo de aprovação e rastreabilidade.</h1>
-        <p>
-          Coordenadores preenchem os dados da unidade, anexem o documento assinado
-          e submetem ao RH. O RH revisa, aprova ou solicita correções.
-        </p>
-
-        <div class="login-features">
-          <div><span>✓</span> Campos obrigatórios</div>
-          <div><span>✓</span> Hierarquia por perfil</div>
-          <div><span>✓</span> Documento assinado</div>
-          <div><span>✓</span> Histórico de aprovação</div>
-        </div>
-      </div>
-    </div>
+    <div class="login-visual" aria-hidden="true"></div>
 
     <div class="login-panel">
-      <div class="login-card">
-        <div class="mobile-brand">
-          <div class="brand-mark">SMS</div>
-          <div>
-            <strong>Secretaria Municipal de Saúde</strong>
-            <span>Controle de Ponto</span>
+      <div class="login-panel-inner">
+        <div class="login-card">
+          <div class="mobile-brand">
+            <div class="brand-mark">SMS</div>
+            <div>
+              <strong>Secretaria Municipal de Saúde</strong>
+              <span>Controle de Ponto</span>
+            </div>
           </div>
+
+          <div class="login-heading">
+            <span class="login-system-label">SECRETARIA MUNICIPAL DE SAÚDE</span>
+            <h1>Acesso ao Sistema</h1>
+            <p>Entre com suas credenciais para acessar o Controle de Ponto.</p>
+          </div>
+
+          <form id="loginForm" novalidate>
+            <label class="field login-field">
+              <span>E-mail institucional</span>
+              <div class="input-with-icon">
+                <span class="field-icon" aria-hidden="true">○</span>
+                <input id="loginEmail" type="email" placeholder="Digite seu e-mail" required />
+              </div>
+            </label>
+
+            <label class="field login-field">
+              <span>Senha</span>
+              <div class="password-wrap input-with-icon">
+                <span class="field-icon lock-icon" aria-hidden="true">□</span>
+                <input id="loginPassword" type="password" placeholder="Digite sua senha" required />
+                <button type="button" class="icon-button" id="togglePassword" aria-label="Mostrar senha">◉</button>
+              </div>
+            </label>
+
+            <div class="login-options">
+              <label class="remember-access">
+                <input type="checkbox" id="rememberAccess" />
+                <span>Lembrar meu acesso</span>
+              </label>
+              <span class="support-text">Acesso institucional</span>
+            </div>
+
+            <button class="btn btn--primary btn--block login-submit" type="submit">
+              <span>→</span>
+              ACESSAR SISTEMA
+            </button>
+          </form>
         </div>
 
-        <span class="eyebrow">Acesso ao sistema</span>
-        <h2>Entrar</h2>
-        <p class="muted">Use um dos perfis de demonstração abaixo.</p>
-
-        <form id="loginForm" novalidate>
-          <label class="field">
-            <span>E-mail institucional <b>*</b></span>
-            <input id="loginEmail" type="email" placeholder="nome@saude.gov.br" required />
-          </label>
-
-          <label class="field">
-            <span>Senha <b>*</b></span>
-            <div class="password-wrap">
-              <input id="loginPassword" type="password" placeholder="••••••••" required />
-              <button type="button" class="icon-button" id="togglePassword" aria-label="Mostrar senha">◉</button>
-            </div>
-          </label>
-
-          <button class="btn btn--primary btn--block" type="submit">Entrar</button>
-        </form>
-
-        <div class="demo-box">
-          <span>Perfis de demonstração</span>
-          <div class="demo-grid">
-            <button class="demo-user" data-role="coordinator">
-              <strong>Coordenador</strong>
-              <small>Preenche e envia</small>
-            </button>
-            <button class="demo-user" data-role="rh">
-              <strong>RH</strong>
-              <small>Analisa e aprova</small>
-            </button>
-            <button class="demo-user" data-role="admin">
-              <strong>Administrador</strong>
-              <small>Gerencia hierarquias</small>
-            </button>
+        <div class="login-security">
+          <div class="security-icon">✓</div>
+          <div>
+            <strong>Sistema seguro e protegido</strong>
+            <span>O acesso é controlado por perfil e suas credenciais são utilizadas somente para autenticação.</span>
           </div>
         </div>
       </div>

@@ -1,0 +1,47 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from database.connect import get_db
+from deps import get_current_user, require_role
+from models import Units, Users
+from schemas.units import UnitCreate, UnitOut
+
+router = APIRouter(prefix="/units", tags=["units"])
+
+
+@router.get("", response_model=list[UnitOut])
+def listar_unidades(
+    db: Session = Depends(get_db),
+    user: Users = Depends(get_current_user),
+):
+    query = db.query(Units)
+    if user.perfil == "coordinator":
+        query = query.filter(Units.id == user.unit_id)
+    return query.all()
+
+
+@router.get("/{unit_id}", response_model=UnitOut)
+def obter_unidade(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    user: Users = Depends(get_current_user),
+):
+    if user.perfil == "coordinator" and user.unit_id != unit_id:
+        raise HTTPException(status_code=403, detail="Você só pode acessar a própria unidade.")
+    unit = db.query(Units).filter(Units.id == unit_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unidade não encontrada.")
+    return unit
+
+
+@router.post("", response_model=UnitOut, status_code=201)
+def criar_unidade(
+    payload: UnitCreate,
+    db: Session = Depends(get_db),
+    _: Users = Depends(require_role("admin")),
+):
+    unit = Units(name=payload.name)
+    db.add(unit)
+    db.commit()
+    db.refresh(unit)
+    return unit
