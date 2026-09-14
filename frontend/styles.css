@@ -42,19 +42,21 @@ button { cursor: pointer; }
 .login-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(390px, 45%) minmax(520px, 55%);
-  background: #ffffff;
+  grid-template-columns: 45% 55%;
+  overflow: hidden;
 }
 
 .login-visual {
+  min-width: 0;
   min-height: 100vh;
-  background-image: url("static/assets/login-ilustracao.png");
+  background-image: url("/static/assets/login-ilustracao.png");
   background-size: cover;
-  background-position: 58% center;
+  background-position: center;
   background-repeat: no-repeat;
 }
 
 .login-panel {
+  min-width: 0;
   min-height: 100vh;
   padding: 46px 7vw 30px;
   display: grid;
