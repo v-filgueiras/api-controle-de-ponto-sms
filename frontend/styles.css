@@ -981,3 +981,124 @@ tbody tr:hover { background: var(--surface-2); }
   .submit-bar .summary { width: 100%; }
   .submit-bar .btn { flex: 1; }
 }
+
+/* ===================== LOGIN VISUAL — REFINADO ===================== */
+
+.login-visual {
+  overflow: hidden;
+  isolation: isolate;
+  padding: 42px 48px 36px;
+  background:
+    linear-gradient(145deg, #082f49 0%, #0b4164 58%, #0f4c75 100%);
+}
+
+.login-visual::before {
+  height: 3px;
+  background: rgba(255,255,255,.22);
+}
+
+.login-visual::after {
+  content: "";
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 50%;
+  right: -190px;
+  bottom: -160px;
+  box-shadow:
+    0 0 0 70px rgba(255,255,255,.025),
+    0 0 0 140px rgba(255,255,255,.018);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.login-visual__top,
+.login-visual__center,
+.login-visual__footer {
+  position: relative;
+  z-index: 2;
+}
+
+.login-visual__top {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.login-visual .brand-mark {
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow: none;
+}
+
+.login-visual__center {
+  max-width: 460px;
+  margin: auto 0;
+  padding: 40px 0 70px;
+}
+
+.login-visual__kicker {
+  display: inline-block;
+  color: #aac6dc;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .16em;
+  margin-bottom: 14px;
+}
+
+.login-visual__center h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(38px, 4vw, 56px);
+  line-height: 1;
+  letter-spacing: -.045em;
+  font-weight: 720;
+}
+
+.login-visual__center p {
+  max-width: 390px;
+  margin: 20px 0 0;
+  color: rgba(255,255,255,.68);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.login-visual__footer {
+  display: grid;
+  gap: 3px;
+  color: rgba(255,255,255,.48);
+  font-size: 10.5px;
+}
+
+.login-visual__footer strong {
+  color: rgba(255,255,255,.72);
+  font-weight: 600;
+}
+
+.login-watermark {
+  position: absolute;
+  right: -18px;
+  bottom: 20px;
+  z-index: 0;
+  color: rgba(255,255,255,.035);
+  font-size: clamp(120px, 15vw, 230px);
+  line-height: .8;
+  font-weight: 900;
+  letter-spacing: -.08em;
+  user-select: none;
+  pointer-events: none;
+}
+
+@media (max-width: 1180px) and (min-width: 901px) {
+  .login-visual {
+    padding: 36px 34px 32px;
+  }
+
+  .login-visual__center h1 {
+    font-size: 40px;
+  }
+
+  .login-visual__center p {
+    max-width: 320px;
+  }
+}
