@@ -60,4 +60,15 @@ app.mount(
 
 @app.get("/", include_in_schema=False)
 def home():
-    return FileResponse("frontend/index.html")
+    return {
+        "versao": "TESTE-NOVO-1509",
+        "arquivo": "main.py novo"
+    }
+
+
+@app.get("/teste-render", include_in_schema=False)
+def teste_render():
+    return {
+        "status": "deploy novo funcionando",
+        "versao": "1509"
+    }
