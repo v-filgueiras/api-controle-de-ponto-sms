@@ -190,28 +190,6 @@ async function fazerLogin(email, senha) {
 }
 
 
-
-function icon(name, size = 18) {
-  const icons = {
-    dashboard: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
-    point: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12a2 2 0 0 1 2 2v16H4V5a2 2 0 0 1 2-2Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>`,
-    approvals: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>`,
-    units: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V7l8-4 8 4v14"/><path d="M8 10h2M14 10h2M8 14h2M14 14h2M10 21v-3h4v3"/></svg>`,
-    history: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>`,
-    users: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11a4 4 0 0 1 0-8M22 21v-2a4 4 0 0 0-3-3.87"/></svg>`,
-    profile: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>`,
-    clock: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
-    check: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>`,
-    alert: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v4M12 17h.01"/></svg>`,
-    menu: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`,
-    bell: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>`,
-    eye: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>`,
-    eyeoff: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.2A11.7 11.7 0 0 1 12 4c6.5 0 10 8 10 8a17.7 17.7 0 0 1-2.1 3.1M6.6 6.6C3.8 8.5 2 12 2 12s3.5 8 10 8a9.8 9.8 0 0 0 4.2-.9"/></svg>`,
-    lock: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>`
-  };
-  return icons[name] || icons.dashboard;
-}
-
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -325,10 +303,10 @@ const roles = {
     user: "Coord. Nova Três Lagoas",
     initials: "CN",
     nav: [
-      ["dashboard", "dashboard", "Painel"],
-      ["point", "point", "Fechamento de ponto"],
-      ["history", "history", "Histórico"],
-      ["profile", "profile", "Meu perfil"]
+      ["dashboard", "⌂", "Painel"],
+      ["point", "▦", "Fechamento de ponto"],
+      ["history", "↺", "Histórico"],
+      ["profile", "○", "Meu perfil"]
     ]
   },
   rh: {
@@ -337,11 +315,11 @@ const roles = {
     user: "Responsável RH",
     initials: "RH",
     nav: [
-      ["dashboard", "dashboard", "Painel"],
-      ["approvals", "approvals", "Aprovações"],
-      ["units", "units", "Unidades"],
-      ["history", "history", "Histórico"],
-      ["profile", "profile", "Meu perfil"]
+      ["dashboard", "⌂", "Painel"],
+      ["approvals", "✓", "Aprovações"],
+      ["units", "⌘", "Unidades"],
+      ["history", "↺", "Histórico"],
+      ["profile", "○", "Meu perfil"]
     ]
   },
   admin: {
@@ -350,11 +328,11 @@ const roles = {
     user: "Administrador do Sistema",
     initials: "AD",
     nav: [
-      ["dashboard", "dashboard", "Painel"],
-      ["users", "users", "Usuários e hierarquia"],
-      ["units", "units", "Unidades"],
-      ["history", "history", "Auditoria"],
-      ["profile", "profile", "Meu perfil"]
+      ["dashboard", "⌂", "Painel"],
+      ["users", "♙", "Usuários e hierarquia"],
+      ["units", "⌘", "Unidades"],
+      ["history", "↺", "Auditoria"],
+      ["profile", "○", "Meu perfil"]
     ]
   }
 };
@@ -438,9 +416,9 @@ function logout() {
 }
 
 function renderNav() {
-  $("#mainNav").innerHTML = state.user.nav.map(([page, iconName, label]) => `
+  $("#mainNav").innerHTML = state.user.nav.map(([page, icon, label]) => `
     <button data-page="${page}">
-      <span class="nav-icon">${icon(iconName)}</span>
+      <span class="nav-icon">${icon}</span>
       <span>${label}</span>
     </button>
   `).join("");
@@ -509,22 +487,22 @@ function coordinatorDashboard() {
 
     <div class="grid grid--4">
       <div class="card metric">
-        <div class="metric-top"><span>Competência</span><span class="metric-icon">${icon("clock", 15)}</span></div>
+        <div class="metric-top"><span>Competência</span><span class="metric-icon">◷</span></div>
         <strong>${unit.competence}</strong>
         <small>11/08 a 10/09</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Servidores</span><span class="metric-icon">${icon("users", 15)}</span></div>
+        <div class="metric-top"><span>Servidores</span><span class="metric-icon">♙</span></div>
         <strong>${unit.rows.length}</strong>
         <small>na unidade selecionada</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Preenchimento</span><span class="metric-icon">${icon("check", 15)}</span></div>
+        <div class="metric-top"><span>Preenchimento</span><span class="metric-icon">✓</span></div>
         <strong>${percent}%</strong>
         <small>campos obrigatórios</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Situação</span><span class="metric-icon">${icon("alert", 15)}</span></div>
+        <div class="metric-top"><span>Situação</span><span class="metric-icon">!</span></div>
         <strong style="font-size:18px">${statusMeta[unit.status]?.[0] || unit.status}</strong>
         <small>${unit.status === "correcao" || unit.status === "rejeitado" ? "revise e reenvie" : "aguardando documento assinado"}</small>
       </div>
@@ -612,22 +590,22 @@ function rhDashboard() {
 
     <div class="grid grid--4">
       <div class="card metric">
-        <div class="metric-top"><span>Unidades</span><span class="metric-icon">${icon("units", 15)}</span></div>
+        <div class="metric-top"><span>Unidades</span><span class="metric-icon">⌘</span></div>
         <strong>${state.units.length}</strong>
         <small>cadastradas</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Aguardando análise</span><span class="metric-icon">${icon("clock", 15)}</span></div>
+        <div class="metric-top"><span>Aguardando análise</span><span class="metric-icon">◷</span></div>
         <strong>${state.units.filter(u => u.status === "pendente").length}</strong>
         <small>envio(s) recebido(s)</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Aprovados</span><span class="metric-icon">${icon("check", 15)}</span></div>
+        <div class="metric-top"><span>Aprovados</span><span class="metric-icon">✓</span></div>
         <strong>${state.units.filter(u => u.status === "aprovado").length}</strong>
         <small>nesta competência</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Com pendência</span><span class="metric-icon">${icon("alert", 15)}</span></div>
+        <div class="metric-top"><span>Com pendência</span><span class="metric-icon">!</span></div>
         <strong>${state.units.filter(u => ["correcao","rejeitado","nao_enviado","rascunho"].includes(u.status)).length}</strong>
         <small>exigem acompanhamento</small>
       </div>
@@ -660,22 +638,22 @@ function adminDashboard() {
 
     <div class="grid grid--4">
       <div class="card metric">
-        <div class="metric-top"><span>Usuários ativos</span><span class="metric-icon">${icon("users", 15)}</span></div>
+        <div class="metric-top"><span>Usuários ativos</span><span class="metric-icon">♙</span></div>
         <strong>${state.users.length}</strong>
         <small>todos os perfis</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Coordenadores</span><span class="metric-icon">${icon("units", 15)}</span></div>
+        <div class="metric-top"><span>Coordenadores</span><span class="metric-icon">⌘</span></div>
         <strong>${state.users.filter(u => u.perfil === "Coordenador").length}</strong>
         <small>com vínculo de unidade</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Unidades</span><span class="metric-icon">${icon("units", 15)}</span></div>
+        <div class="metric-top"><span>Unidades</span><span class="metric-icon">▦</span></div>
         <strong>${state.units.length}</strong>
         <small>cadastradas</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Perfis de acesso</span><span class="metric-icon">${icon("profile", 15)}</span></div>
+        <div class="metric-top"><span>Perfis de acesso</span><span class="metric-icon">⊚</span></div>
         <strong>3</strong>
         <small>Administrador, RH e Coordenador</small>
       </div>
@@ -1522,7 +1500,7 @@ function profileView() {
         </div>
       </div>
       <div class="card card-pad security-panel">
-        <div class="security-panel__icon">${icon("lock", 18)}</div>
+        <div class="security-panel__icon">⌁</div>
         <div>
           <span class="eyebrow">SEGURANÇA</span>
           <h3>Senha de acesso</h3>
@@ -1591,7 +1569,10 @@ function bindCurrentPage() {
     openModal({
       title: "Documento assinado",
       content: `
-        <div class="file-preview">
+        <div class="notice notice--info">
+          Documento anexado ao fechamento selecionado.
+        </div>
+        <div class="file-preview" style="margin-top:14px">
           <div class="file-icon">PDF</div>
           <div><strong>Documento de fechamento assinado</strong><span>Documento do fechamento</span></div>
         </div>
@@ -1904,24 +1885,8 @@ function escapeHtml(value) {
 
 loadPersisted();
 
-
-function refreshStaticIcons() {
-  const menu = $("#menuBtn");
-  const bell = $("#notificationBtn");
-  const toggle = $("#togglePassword");
-  if (menu) menu.innerHTML = icon("menu", 19);
-  if (bell) bell.innerHTML = icon("bell", 18);
-  if (toggle) toggle.innerHTML = icon($("#loginPassword")?.type === "password" ? "eye" : "eyeoff", 18);
-}
-refreshStaticIcons();
-
 $("#loginForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const submitBtn = $("#loginSubmitBtn");
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Entrando...";
-  }
 
   const email = $("#loginEmail").value.trim();
   const password = $("#loginPassword").value;
@@ -1961,10 +1926,7 @@ $$(".demo-user").forEach(btn => {
 
 $("#togglePassword").addEventListener("click", () => {
   const p = $("#loginPassword");
-  const mostrar = p.type === "password";
-  p.type = mostrar ? "text" : "password";
-  $("#togglePassword").innerHTML = icon(mostrar ? "eyeoff" : "eye", 18);
-  $("#togglePassword").setAttribute("aria-label", mostrar ? "Ocultar senha" : "Mostrar senha");
+  p.type = p.type === "password" ? "text" : "password";
 });
 
 $("#logoutBtn").addEventListener("click", logout);
