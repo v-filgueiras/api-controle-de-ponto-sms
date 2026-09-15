@@ -1707,25 +1707,109 @@ function bindCurrentPage() {
     }
   }));
 
-  $("#openDocBtn")?.addEventListener("click", () => {
-    openModal({
-      title: "Documento assinado",
-      content: `
-        <div class="notice notice--info">
-          Documento anexado ao fechamento selecionado.
-        </div>
-        <div class="file-preview" style="margin-top:14px">
-          <div class="file-icon">PDF</div>
-          <div><strong>Documento de fechamento assinado</strong><span>Documento do fechamento</span></div>
-        </div>
-      `
-    });
+  $("#openDocBtn")?.addEventListener("click", async () => {
+    if (!unit.document?.id) {
+      toast("Nenhum documento foi anexado a este fechamento.", "error");
+      return;
+    }
+
+    await abrirDocumento(unit.document.id);
   });
 
   $("#newUserBtn")?.addEventListener("click", openNewUserModal);
   $("#newUnitBtn")?.addEventListener("click", openNewUnitModal);
   $("#changeMyPasswordBtn")?.addEventListener("click", openChangeMyPasswordModal);
   $$("[data-edit-user]").forEach(btn => btn.addEventListener("click", () => openEditUserModal(Number(btn.dataset.editUser))));
+}
+
+
+async function abrirDocumento(documentId) {
+  let novaAba = null;
+
+  try {
+    // Abre a aba imediatamente, ainda dentro do clique do usuário.
+    // Isso evita bloqueio de pop-up após o await/fetch.
+    novaAba = window.open("", "_blank");
+
+    if (!novaAba) {
+      throw new Error("O navegador bloqueou a nova aba. Permita pop-ups para este site.");
+    }
+
+    novaAba.document.write(`
+      <!doctype html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="utf-8">
+          <title>Carregando documento...</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 32px;
+              color: #243047;
+            }
+          </style>
+        </head>
+        <body>
+          <p>Carregando documento...</p>
+        </body>
+      </html>
+    `);
+
+    const token = getToken();
+
+    if (!token) {
+      throw new Error("Sua sessão expirou. Entre novamente no sistema.");
+    }
+
+    const response = await fetch(`/documentos/${documentId}/download`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      let mensagem = `Não foi possível abrir o documento (HTTP ${response.status}).`;
+
+      try {
+        const erro = await response.json();
+        mensagem = erro.detail || mensagem;
+      } catch (_) {}
+
+      throw new Error(mensagem);
+    }
+
+    const blob = await response.blob();
+
+    if (!blob.size) {
+      throw new Error("O documento retornado está vazio.");
+    }
+
+    const pdfBlob = new Blob([blob], { type: "application/pdf" });
+    const url = URL.createObjectURL(pdfBlob);
+
+    novaAba.location.href = url;
+
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 120000);
+
+  } catch (error) {
+    console.error("Erro ao abrir PDF:", error);
+
+    if (novaAba && !novaAba.closed) {
+      novaAba.document.body.innerHTML = `
+        <p style="font-family:Arial,sans-serif;padding:24px;color:#b42318;">
+          ${String(error.message || "Erro ao abrir o documento.")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")}
+        </p>
+      `;
+    }
+
+    toast(error.message || "Erro ao abrir o documento.", "error");
+  }
 }
 
 function openNewUserModal() {

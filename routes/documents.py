@@ -55,4 +55,7 @@ def baixar_documento(
         path=documento.storage_path,
         media_type=documento.mime_type,
         filename=documento.filename,
+        headers={
+            "Content-Disposition": f'inline; filename="{documento.filename}"'
+        },
     )
