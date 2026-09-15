@@ -978,3 +978,130 @@ tbody tr:hover { background: #fbfcfe; }
     padding-right: 34px;
   }
 }
+
+/* ===== Refinos visuais: usuários, perfil e modais ===== */
+.page-intro h1 {
+  color: #102039;
+  font-weight: 800;
+}
+
+.card {
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.card:hover {
+  border-color: #d5dfeb;
+  box-shadow: 0 10px 28px rgba(31, 49, 86, .07);
+}
+
+table tbody tr {
+  transition: background .16s ease;
+}
+
+.table-action {
+  transition: background .16s ease, transform .16s ease;
+}
+
+.table-action:hover {
+  background: #dceaff;
+  transform: translateY(-1px);
+}
+
+.edit-user-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 0 18px;
+}
+
+.edit-user-head strong,
+.edit-user-head span {
+  display: block;
+}
+
+.edit-user-head strong {
+  font-size: 14px;
+}
+
+.edit-user-head span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.password-reset-box {
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(220px, 1.2fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.password-reset-box strong,
+.password-reset-box span {
+  display: block;
+}
+
+.password-reset-box strong {
+  font-size: 12px;
+}
+
+.password-reset-box span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.security-panel {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.security-panel__icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.security-panel h3 {
+  margin: 2px 0 4px;
+  font-size: 15px;
+}
+
+.security-panel p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.eyebrow {
+  color: #77869a;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .12em;
+}
+
+.modal {
+  border: 1px solid rgba(228, 233, 241, .9);
+}
+
+.modal-head {
+  background: #fbfcfe;
+}
+
+@media (max-width: 680px) {
+  .password-reset-box,
+  .security-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .security-panel__icon {
+    display: none;
+  }
+}

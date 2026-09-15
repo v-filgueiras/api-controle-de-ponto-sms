@@ -690,17 +690,6 @@ function adminDashboard() {
           </div>
         </div>
       </div>
-
-      <div class="card">
-        <div class="section-head">
-          <div><h3>Regras importantes</h3><p>Regras de acesso</p></div>
-        </div>
-        <div class="card-pad grid" style="gap:10px">
-          <div class="notice notice--info">O perfil de acesso é definido pela administração do sistema e não pode ser alterado pelo próprio usuário.</div>
-          <div class="notice">Cada coordenador acessa somente a unidade vinculada ao seu cadastro.</div>
-          <div class="notice">Toda decisão do RH fica registrada com responsável, data, situação e justificativa quando necessária.</div>
-        </div>
-      </div>
     </div>
   `;
 }
@@ -1510,10 +1499,14 @@ function profileView() {
           <span>Unidade / Escopo</span><strong>${state.role === "coordinator" ? myUnit().name : "Secretaria Municipal de Saúde"}</strong>
         </div>
       </div>
-      <div class="card card-pad">
-        <h3 style="margin-top:0">Segurança</h3>
-        <div class="notice">Sua sessão é protegida por autenticação. Mantenha suas credenciais de acesso em segurança.</div>
-        <button class="btn btn--outline" style="margin-top:14px">Alterar senha</button>
+      <div class="card card-pad security-panel">
+        <div class="security-panel__icon">⌁</div>
+        <div>
+          <span class="eyebrow">SEGURANÇA</span>
+          <h3>Senha de acesso</h3>
+          <p class="muted">Atualize sua senha sempre que necessário.</p>
+        </div>
+        <button class="btn btn--primary" id="changeMyPasswordBtn">Alterar senha</button>
       </div>
     </div>
   `;
@@ -1589,6 +1582,7 @@ function bindCurrentPage() {
 
   $("#newUserBtn")?.addEventListener("click", openNewUserModal);
   $("#newUnitBtn")?.addEventListener("click", openNewUnitModal);
+  $("#changeMyPasswordBtn")?.addEventListener("click", openChangeMyPasswordModal);
   $$("[data-edit-user]").forEach(btn => btn.addEventListener("click", () => openEditUserModal(Number(btn.dataset.editUser))));
 }
 
@@ -1615,7 +1609,6 @@ function openNewUserModal() {
           </select>
         </label>
       </div>
-      <div class="notice notice--info" style="margin-top:16px">Para Coordenador, o vínculo de unidade define quais dados poderão ser acessados.</div>
     `,
     actions: `
       <button class="btn btn--outline" data-cancel>Cancelar</button>
@@ -1666,35 +1659,161 @@ function openNewUserModal() {
 
 function openEditUserModal(index) {
   const u = state.users[index];
+
   openModal({
     title: "Editar usuário",
     content: `
-      <label class="field" style="margin-top:0"><span>Nome</span><input value="${escapeHtml(u.nome)}" disabled /></label>
-      <label class="field"><span>Perfil</span>
-        <select id="editRole">
-          ${["Administrador","RH","Coordenador"].map(r => `<option ${u.perfil === r ? "selected" : ""}>${r}</option>`).join("")}
-        </select>
-      </label>
-      <label class="field"><span>Unidade / Escopo</span>
-        <select id="editUnit">
-          <option ${u.unidade === "Secretaria Municipal de Saúde" ? "selected" : ""}>Secretaria Municipal de Saúde</option>
-          ${state.units.map(x => `<option ${u.unidade === x.name ? "selected" : ""}>${x.name}</option>`).join("")}
-        </select>
-      </label>
+      <div class="edit-user-head">
+        <div class="avatar">${initials(u.nome)}</div>
+        <div>
+          <strong>${escapeHtml(u.nome)}</strong>
+          <span>${escapeHtml(u.email)}</span>
+        </div>
+      </div>
+
+      <div class="grid grid--2">
+        <label class="field" style="margin-top:0"><span>Perfil</span>
+          <select id="editRole">
+            ${["Administrador","RH","Coordenador"].map(r => `<option ${u.perfil === r ? "selected" : ""}>${r}</option>`).join("")}
+          </select>
+        </label>
+
+        <label class="field" style="margin-top:0"><span>Unidade / Escopo</span>
+          <select id="editUnit">
+            <option value="">Secretaria Municipal de Saúde</option>
+            ${state.units.map(x => `<option value="${x.id}" ${u.unit_id === x.id ? "selected" : ""}>${x.name}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+
+      <div class="separator"></div>
+
+      <div class="password-reset-box">
+        <div>
+          <strong>Redefinir senha</strong>
+          <span>Deixe em branco para manter a senha atual.</span>
+        </div>
+        <input id="editPassword" type="password" minlength="8" placeholder="Nova senha (mín. 8 caracteres)" />
+      </div>
     `,
     actions: `
       <button class="btn btn--outline" data-cancel>Cancelar</button>
       <button class="btn btn--primary" id="saveEditUser">Salvar alterações</button>
     `
   });
+
   $("[data-cancel]")?.addEventListener("click", closeModal);
-  $("#saveEditUser")?.addEventListener("click", () => {
-    u.perfil = $("#editRole").value;
-    u.unidade = $("#editUnit").value;
-    persist();
-    closeModal();
-    toast("Usuário atualizado.", "success");
-    navigate("users");
+
+  const syncUnitField = () => {
+    const coordinator = $("#editRole").value === "Coordenador";
+    $("#editUnit").disabled = !coordinator;
+    if (!coordinator) $("#editUnit").value = "";
+  };
+
+  $("#editRole")?.addEventListener("change", syncUnitField);
+  syncUnitField();
+
+  $("#saveEditUser")?.addEventListener("click", async () => {
+    const roleLabel = $("#editRole").value;
+    const perfil =
+      roleLabel === "Administrador" ? "admin" :
+      roleLabel === "RH" ? "rh" : "coordinator";
+
+    const unit_id = perfil === "coordinator" ? Number($("#editUnit").value) || null : null;
+    const password = $("#editPassword").value;
+
+    if (perfil === "coordinator" && !unit_id) {
+      toast("Selecione a unidade do coordenador.", "error");
+      return;
+    }
+
+    if (password && password.length < 8) {
+      toast("A nova senha deve ter pelo menos 8 caracteres.", "error");
+      return;
+    }
+
+    try {
+      await api(`/usuarios/${u.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ perfil, unit_id })
+      });
+
+      if (password) {
+        await api(`/usuarios/${u.id}/senha`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+      }
+
+      closeModal();
+      toast("Usuário atualizado.", "success");
+      await carregarDados();
+      navigate("users");
+    } catch (e) {
+      toast(e.message || "Erro ao atualizar usuário.", "error");
+    }
+  });
+}
+
+function openChangeMyPasswordModal() {
+  openModal({
+    title: "Alterar senha",
+    content: `
+      <label class="field" style="margin-top:0">
+        <span>Senha atual</span>
+        <input id="currentPassword" type="password" autocomplete="current-password" />
+      </label>
+      <label class="field">
+        <span>Nova senha</span>
+        <input id="newPassword" type="password" minlength="8" autocomplete="new-password" />
+      </label>
+      <label class="field">
+        <span>Confirmar nova senha</span>
+        <input id="confirmPassword" type="password" minlength="8" autocomplete="new-password" />
+      </label>
+    `,
+    actions: `
+      <button class="btn btn--outline" data-cancel>Cancelar</button>
+      <button class="btn btn--primary" id="saveMyPasswordBtn">Atualizar senha</button>
+    `
+  });
+
+  $("[data-cancel]")?.addEventListener("click", closeModal);
+
+  $("#saveMyPasswordBtn")?.addEventListener("click", async () => {
+    const current_password = $("#currentPassword").value;
+    const new_password = $("#newPassword").value;
+    const confirm = $("#confirmPassword").value;
+
+    if (!current_password || !new_password || !confirm) {
+      toast("Preencha os três campos.", "error");
+      return;
+    }
+
+    if (new_password.length < 8) {
+      toast("A nova senha deve ter pelo menos 8 caracteres.", "error");
+      return;
+    }
+
+    if (new_password !== confirm) {
+      toast("A confirmação da senha não confere.", "error");
+      return;
+    }
+
+    try {
+      await api("/usuarios/me/senha", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password, new_password })
+      });
+
+      closeModal();
+      toast("Senha alterada com sucesso.", "success");
+    } catch (e) {
+      toast(e.message || "Erro ao alterar senha.", "error");
+    }
   });
 }
 
@@ -1706,9 +1825,6 @@ function openNewUnitModal() {
         <span>Nome da unidade <b>*</b></span>
         <input id="unitName" placeholder="Ex.: USF ..." />
       </label>
-      <div class="notice notice--info" style="margin-top:16px">
-        O coordenador é vinculado à unidade no cadastro do usuário.
-      </div>
     `,
     actions: `
       <button class="btn btn--outline" data-cancel>Cancelar</button>
