@@ -823,9 +823,10 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 12px;
+
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .brand-logo-shell--login {
