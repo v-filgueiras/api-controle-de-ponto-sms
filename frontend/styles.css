@@ -41,6 +41,7 @@ body {
   background: var(--bg);
   min-height: 100vh;
   font-size: 14px;
+  overflow-x: hidden;
 }
 
 button, input, select, textarea { font: inherit; }

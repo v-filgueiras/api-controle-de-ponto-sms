@@ -1,396 +1,122 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
   <meta charset="UTF-8" />
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
-
-  <title>
-    Controle de Ponto | Secretaria Municipal de Saúde
-  </title>
-
-  <meta
-    name="description"
-    content="Sistema de controle, fechamento e aprovação de ponto da Secretaria Municipal de Saúde."
-  />
-
-  <!-- CSS servido pelo FastAPI -->
-  <link
-    rel="stylesheet"
-    href="/static/styles.css"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle de Ponto | Secretaria Municipal de Saúde</title>
+  <meta name="description" content="Sistema de controle, fechamento e aprovação de ponto da Secretaria Municipal de Saúde." />
+  <link rel="stylesheet" href="/static/styles.css" />
 </head>
-
 <body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- Toast de mensagens -->
-  <div
-    id="toast"
-    class="toast"
-    role="status"
-    aria-live="polite"
-  ></div>
-
-
-  <!-- =========================
-       LOGIN
-  ========================== -->
-
-  <section
-    id="loginView"
-    class="login-shell"
-  >
-
-    <!-- Área visual esquerda -->
+  <section id="loginView" class="login-shell">
     <div class="login-visual">
-
       <div class="login-visual__top">
-
         <div class="brand brand--light">
-
-          <div class="brand-mark">
-            SMS
-          </div>
-
+          <div class="brand-mark">SMS</div>
           <div>
-            <strong>
-              Secretaria Municipal de Saúde
-            </strong>
-
-            <span>
-              Três Lagoas — MS
-            </span>
+            <strong>Secretaria Municipal de Saúde</strong>
+            <span>Três Lagoas — MS</span>
           </div>
-
         </div>
-
       </div>
-
 
       <div class="login-visual__center">
-
-        <span class="login-visual__kicker">
-          SISTEMA INTERNO
-        </span>
-
-        <h1>
-          Controle de Ponto
-        </h1>
-
-        <p>
-          Gestão mensal de registros, documentos e aprovações
-          das unidades de saúde.
-        </p>
-
+        <span class="login-visual__kicker">SISTEMA INTERNO</span>
+        <h1>Controle de Ponto</h1>
+        <p>Gestão mensal de registros, documentos e aprovações das unidades de saúde.</p>
       </div>
-
 
       <div class="login-visual__footer">
-
-        <span>
-          Secretaria Municipal de Saúde
-        </span>
-
-        <strong>
-          Gestão de Pessoas
-        </strong>
-
+        <span>Secretaria Municipal de Saúde</span>
+        <strong>Gestão de Pessoas</strong>
       </div>
 
-
-      <div
-        class="login-watermark"
-        aria-hidden="true"
-      >
-        SMS
-      </div>
-
+      <div class="login-watermark" aria-hidden="true">SMS</div>
     </div>
 
-
-    <!-- Área do formulário -->
     <div class="login-panel">
-
       <div class="login-card">
-
-        <!-- Marca para mobile -->
         <div class="mobile-brand">
-
-          <div class="brand-mark">
-            SMS
-          </div>
-
+          <div class="brand-mark">SMS</div>
           <div>
-            <strong>
-              Secretaria Municipal de Saúde
-            </strong>
-
-            <span>
-              Controle de Ponto
-            </span>
+            <strong>Secretaria Municipal de Saúde</strong>
+            <span>Controle de Ponto</span>
           </div>
-
         </div>
 
-
-        <span class="eyebrow">
-          ACESSO RESTRITO
-        </span>
-
-
-        <h2>
-          Entrar no sistema
-        </h2>
-
-
-        <p
-          class="muted"
-          style="margin: 0 0 22px; line-height: 1.55;"
-        >
+        <span class="eyebrow">ACESSO RESTRITO</span>
+        <h2>Entrar no sistema</h2>
+        <p class="muted" style="margin:0 0 22px;line-height:1.55">
           Use seu e-mail institucional e sua senha para continuar.
         </p>
 
-
-        <form
-          id="loginForm"
-          novalidate
-        >
-
-          <!-- E-mail -->
+        <form id="loginForm" novalidate>
           <label class="field">
-
-            <span>
-              E-mail
-            </span>
-
-            <input
-              id="loginEmail"
-              type="email"
-              placeholder="seuemail@dominio.com"
-              autocomplete="username"
-              required
-            />
-
+            <span>E-mail</span>
+            <input id="loginEmail" type="email" placeholder="seuemail@dominio.com" autocomplete="username" required />
           </label>
 
-
-          <!-- Senha -->
           <label class="field">
-
-            <span>
-              Senha
-            </span>
-
+            <span>Senha</span>
             <div class="password-wrap">
-
-              <input
-                id="loginPassword"
-                type="password"
-                placeholder="Digite sua senha"
-                autocomplete="current-password"
-                required
-              />
-
-              <button
-                type="button"
-                class="icon-button"
-                id="togglePassword"
-                aria-label="Mostrar senha"
-              ></button>
-
+              <input id="loginPassword" type="password" placeholder="Digite sua senha" autocomplete="current-password" required />
+              <button type="button" class="icon-button" id="togglePassword" aria-label="Mostrar senha"></button>
             </div>
-
           </label>
 
-
-          <!-- Botão login -->
-          <button
-            class="btn btn--primary btn--block"
-            type="submit"
-            id="loginSubmitBtn"
-          >
+          <button class="btn btn--primary btn--block" type="submit" id="loginSubmitBtn">
             Entrar
           </button>
-
         </form>
-
       </div>
-
     </div>
-
   </section>
 
-
-
-  <!-- =========================
-       SISTEMA
-  ========================== -->
-
-  <section
-    id="appView"
-    class="app-shell hidden"
-  >
-
-    <!-- Sidebar -->
-    <aside
-      class="sidebar"
-      id="sidebar"
-    >
-
+  <section id="appView" class="app-shell hidden">
+    <aside class="sidebar" id="sidebar">
       <div class="brand">
-
-        <div class="brand-mark">
-          SMS
-        </div>
-
+        <div class="brand-mark">SMS</div>
         <div class="brand-text">
-
-          <strong>
-            Secretaria de Saúde
-          </strong>
-
-          <span>
-            Controle de Ponto
-          </span>
-
+          <strong>Secretaria de Saúde</strong>
+          <span>Controle de Ponto</span>
         </div>
-
       </div>
 
+      <nav id="mainNav" class="nav" aria-label="Menu principal"></nav>
 
-      <!-- Menu montado pelo JavaScript -->
-      <nav
-        id="mainNav"
-        class="nav"
-        aria-label="Menu principal"
-      ></nav>
-
-
-      <!-- Usuário logado -->
       <div class="sidebar-footer">
-
         <div class="user-mini">
-
-          <div
-            class="avatar"
-            id="sidebarAvatar"
-          >
-            --
-          </div>
-
-
+          <div class="avatar" id="sidebarAvatar">--</div>
           <div>
-
-            <strong id="sidebarUser">
-              Usuário
-            </strong>
-
-            <span id="sidebarRole">
-              Perfil
-            </span>
-
+            <strong id="sidebarUser">Usuário</strong>
+            <span id="sidebarRole">Perfil</span>
           </div>
-
         </div>
-
-
-        <button
-          id="logoutBtn"
-          class="btn btn--ghost btn--block"
-        >
-          Sair
-        </button>
-
+        <button id="logoutBtn" class="btn btn--ghost btn--block">Sair</button>
       </div>
-
     </aside>
 
-
-
-    <!-- =========================
-         CONTEÚDO PRINCIPAL
-    ========================== -->
-
     <main class="main">
-
-      <!-- Topbar -->
       <header class="topbar">
-
-        <button
-          id="menuBtn"
-          class="menu-btn"
-          aria-label="Abrir menu"
-        ></button>
-
-
+        <button id="menuBtn" class="menu-btn" aria-label="Abrir menu"></button>
         <div>
-
-          <span
-            class="breadcrumb"
-            id="breadcrumb"
-          >
-            Início
-          </span>
-
-          <h2 id="pageTitle">
-            Painel
-          </h2>
-
+          <span class="breadcrumb" id="breadcrumb">Início</span>
+          <h2 id="pageTitle">Painel</h2>
         </div>
-
-
         <div class="topbar-actions">
-
-          <button
-            class="icon-button notification"
-            id="notificationBtn"
-            title="Notificações"
-            aria-label="Notificações"
-          ></button>
-
-
-          <div
-            class="avatar"
-            id="topAvatar"
-          >
-            --
-          </div>
-
+          <button class="icon-button notification" id="notificationBtn" title="Notificações" aria-label="Notificações"></button>
+          <div class="avatar" id="topAvatar">--</div>
         </div>
-
       </header>
 
-
-      <!-- Conteúdo dinâmico -->
-      <div
-        id="content"
-        class="content"
-      ></div>
-
+      <div id="content" class="content"></div>
     </main>
-
   </section>
-
-
-
-  <!-- =========================
-       MODAIS
-  ========================== -->
 
   <div id="modalRoot"></div>
 
-
-
-  <!-- =========================
-       JAVASCRIPT
-  ========================== -->
-
   <script src="/static/app.js"></script>
-
 </body>
-
 </html>
