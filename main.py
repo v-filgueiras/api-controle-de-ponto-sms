@@ -51,6 +51,7 @@ app.include_router(history_log_router)
 
 
 # Arquivos do frontend
+# Arquivos do frontend
 app.mount(
     "/static",
     StaticFiles(directory="frontend"),
@@ -60,15 +61,4 @@ app.mount(
 
 @app.get("/", include_in_schema=False)
 def home():
-    return {
-        "versao": "TESTE-NOVO-1509",
-        "arquivo": "main.py novo"
-    }
-
-
-@app.get("/teste-render", include_in_schema=False)
-def teste_render():
-    return {
-        "status": "deploy novo funcionando",
-        "versao": "1509"
-    }
+    return FileResponse("frontend/index.html")
