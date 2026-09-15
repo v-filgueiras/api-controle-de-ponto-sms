@@ -59,6 +59,7 @@ CREATE TABLE point_rows (
   gr SMALLINT NOT NULL DEFAULT 0 CHECK (gr >= 0),
   ins SMALLINT NOT NULL DEFAULT 0 CHECK (ins >= 0),
   at SMALLINT NOT NULL DEFAULT 0 CHECK (at >= 0),
+  faltas SMALLINT NOT NULL DEFAULT 0 CHECK (faltas >= 0),
   observacao VARCHAR(500) NOT NULL DEFAULT 'Sem observação'
 );
 

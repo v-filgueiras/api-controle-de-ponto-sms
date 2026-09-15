@@ -20,6 +20,7 @@ from routes.units import router as units_router
 from routes.fechamentos import router as fechamentos_router
 from routes.documents import router as documents_router
 from routes.history_log import router as history_log_router
+from routes.dashboard import router as dashboard_router
 
 
 app = FastAPI(
@@ -48,9 +49,9 @@ app.include_router(units_router)
 app.include_router(fechamentos_router)
 app.include_router(documents_router)
 app.include_router(history_log_router)
+app.include_router(dashboard_router)
 
 
-# Arquivos do frontend
 # Arquivos do frontend
 app.mount(
     "/static",

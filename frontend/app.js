@@ -136,6 +136,15 @@ async function carregarDados() {
     }
   }
 
+  if (state.role === "rh") {
+    try {
+      state.rhDashboard = await api("/dashboard/rh");
+    } catch (e) {
+      console.warn("Não foi possível carregar o dashboard do RH:", e);
+      state.rhDashboard = null;
+    }
+  }
+
   if (state.role === "coordinator" && state.user?.unit_id) {
     const f = await api(`/unidades/${state.user.unit_id}/fechamento-atual`);
     const unitIndex = state.units.findIndex(u => u.id === state.user.unit_id);
@@ -194,7 +203,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 function seedRow(matricula, nome, cargo, periodo, dt, obs) {
-  return { matricula, nome, cargo, periodo, dt, bh: "0", he: "0", an: "0", gr: "0", ins: "0", at: "0", observacao: obs || "Sem observação" };
+  return { matricula, nome, cargo, periodo, dt, bh: "0", he: "0", an: "0", gr: "0", ins: "0", at: "0", faltas: "0", observacao: obs || "Sem observação" };
 }
 
 const state = {
@@ -203,6 +212,7 @@ const state = {
   currentPage: "dashboard",
   uploadedFile: null,
   signatureMethod: "",
+  rhDashboard: null,
   units: [
     {
       id: 1, name: "USF Nova Três Lagoas", coordinator: "Coord. Nova Três Lagoas", status: "rascunho", competence: "SETEMBRO/2026",
@@ -577,49 +587,160 @@ function coordinatorDashboard() {
 }
 
 function rhDashboard() {
+  const d = state.rhDashboard;
+
+  if (!d) {
+    return `
+      <div class="page-intro">
+        <div>
+          <h1>Dashboard do RH</h1>
+          <p>Não foi possível carregar os indicadores consolidados.</p>
+        </div>
+      </div>
+      <div class="notice notice--warning">Verifique se a rota <strong>/dashboard/rh</strong> foi adicionada ao backend.</div>
+    `;
+  }
+
+  const t = d.totals || {};
+  const units = d.units || [];
+  const maxFaltas = Math.max(1, ...units.map(u => Number(u.faltas || 0)));
+  const fmt = value => Number(value || 0).toLocaleString("pt-BR");
+
+  const chart = units.length
+    ? units.slice(0, 10).map(u => {
+        const value = Number(u.faltas || 0);
+        const width = value === 0 ? 0 : Math.max(4, Math.round((value / maxFaltas) * 100));
+        return `
+          <div class="rh-chart-row">
+            <span class="rh-chart-name" title="${escapeHtml(u.unit_name)}">${escapeHtml(u.unit_name)}</span>
+            <div class="rh-chart-track"><div class="rh-chart-bar" style="width:${width}%"></div></div>
+            <strong class="rh-chart-value">${fmt(value)}</strong>
+          </div>
+        `;
+      }).join("")
+    : `<div class="empty">Nenhum dado encontrado para os filtros selecionados.</div>`;
+
+  const rows = units.length
+    ? units.map(u => `
+        <tr>
+          <td><strong>${escapeHtml(u.unit_name)}</strong></td>
+          <td>${fmt(u.employees)}</td>
+          <td>${fmt(u.dt)}</td>
+          <td><strong>${fmt(u.faltas)}</strong></td>
+          <td>${fmt(u.at)}</td>
+          <td>${fmt(u.bh)}</td>
+          <td>${fmt(u.he)}</td>
+          <td>${fmt(u.an)}</td>
+          <td>${fmt(u.gr)}</td>
+          <td>${fmt(u.ins)}</td>
+          <td>${badge(u.status)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="11" class="empty">Nenhum dado encontrado.</td></tr>`;
+
   return `
     <div class="page-intro">
       <div>
-        <h1>Painel do RH</h1>
-        <p>Acompanhe os fechamentos recebidos das unidades, as pendências e o histórico de aprovação.</p>
+        <h1>Dashboard do RH</h1>
+        <p>Visão consolidada dos dados de ponto por competência e por unidade.</p>
       </div>
-      <div class="actions">
-        <button class="btn btn--primary" data-go="approvals">Ver pendências</button>
+      <div class="rh-dashboard-filters">
+        <label class="field">
+          <span>Competência</span>
+          <select id="rhCompetenceFilter">
+            ${(d.competences || []).map(c => `<option value="${escapeHtml(c)}" ${c === d.competence ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field">
+          <span>Unidade</span>
+          <select id="rhUnitFilter">
+            <option value="">Todas as unidades</option>
+            ${(d.available_units || []).map(u => `<option value="${u.id}" ${Number(d.selected_unit_id) === Number(u.id) ? "selected" : ""}>${escapeHtml(u.name)}</option>`).join("")}
+          </select>
+        </label>
       </div>
     </div>
 
-    <div class="grid grid--4">
+    <div class="grid rh-metrics">
       <div class="card metric">
-        <div class="metric-top"><span>Unidades</span><span class="metric-icon">⌘</span></div>
-        <strong>${state.units.length}</strong>
-        <small>cadastradas</small>
+        <div class="metric-top"><span>Servidores</span><span class="metric-icon">♙</span></div>
+        <strong>${fmt(t.employees)}</strong>
+        <small>registros na competência</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Aguardando análise</span><span class="metric-icon">◷</span></div>
-        <strong>${state.units.filter(u => u.status === "pendente").length}</strong>
-        <small>envio(s) recebido(s)</small>
+        <div class="metric-top"><span>Faltas</span><span class="metric-icon">!</span></div>
+        <strong>${fmt(t.absences)}</strong>
+        <small>total informado</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Aprovados</span><span class="metric-icon">✓</span></div>
-        <strong>${state.units.filter(u => u.status === "aprovado").length}</strong>
-        <small>nesta competência</small>
+        <div class="metric-top"><span>Atestados</span><span class="metric-icon">+</span></div>
+        <strong>${fmt(t.medical_certificates)}</strong>
+        <small>total informado</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Com pendência</span><span class="metric-icon">!</span></div>
-        <strong>${state.units.filter(u => ["correcao","rejeitado","nao_enviado","rascunho"].includes(u.status)).length}</strong>
-        <small>exigem acompanhamento</small>
+        <div class="metric-top"><span>Horas extras</span><span class="metric-icon">◷</span></div>
+        <strong>${fmt(t.overtime)}</strong>
+        <small>HE acumulada</small>
+      </div>
+      <div class="card metric">
+        <div class="metric-top"><span>Banco de horas</span><span class="metric-icon">↺</span></div>
+        <strong>${fmt(t.time_bank)}</strong>
+        <small>BH acumulado</small>
+      </div>
+      <div class="card metric">
+        <div class="metric-top"><span>Pendentes</span><span class="metric-icon">✓</span></div>
+        <strong>${fmt(t.pending)}</strong>
+        <small>aguardando análise do RH</small>
+      </div>
+    </div>
+
+    <div class="grid grid--2" style="margin-top:16px">
+      <div class="card">
+        <div class="section-head">
+          <div>
+            <h3>Faltas por unidade</h3>
+            <p>Ranking da competência ${escapeHtml(d.competence)}</p>
+          </div>
+        </div>
+        <div class="card-pad rh-chart-list">${chart}</div>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
+          <div>
+            <h3>Situação dos fechamentos</h3>
+            <p>Acompanhamento da competência selecionada</p>
+          </div>
+        </div>
+        <div class="card-pad">
+          <div class="rh-status-summary">
+            <div class="rh-status-item"><strong>${fmt(t.pending)}</strong><span>Aguardando RH</span></div>
+            <div class="rh-status-item"><strong>${fmt(t.approved)}</strong><span>Aprovados</span></div>
+            <div class="rh-status-item"><strong>${fmt(t.correction)}</strong><span>Em correção</span></div>
+            <div class="rh-status-item"><strong>${fmt(t.rejected)}</strong><span>Rejeitados</span></div>
+            <div class="rh-status-item"><strong>${fmt(t.not_sent)}</strong><span>Não enviados</span></div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="card" style="margin-top:16px">
       <div class="section-head">
         <div>
-          <h3>Situação das unidades</h3>
-          <p>Competência SETEMBRO/2026</p>
+          <h3>Resumo por unidade</h3>
+          <p>DT = dias trabalhados · BH = banco de horas · HE = hora extra · AN = adicional noturno · GR = gratificação · INS = insalubridade · AT = atestado</p>
         </div>
-        <button class="btn btn--outline" data-go="approvals">Abrir central de aprovações</button>
       </div>
-      ${unitsTable(true)}
+      <div class="table-wrap">
+        <table style="min-width:1180px">
+          <thead>
+            <tr>
+              <th>Unidade</th><th>Servidores</th><th>DT</th><th>Faltas</th><th>AT</th><th>BH</th><th>HE</th><th>AN</th><th>GR</th><th>INS</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>
   `;
 }
@@ -729,14 +850,14 @@ function pointView() {
             <thead>
               <tr>
                 <th>Matrícula</th><th>Nome</th><th>Cargo</th><th>Período</th>
-                <th>DT</th><th>BH</th><th>HE</th><th>AN</th><th>GR</th><th>INS</th><th>AT</th><th>Observação</th>
+                <th>DT</th><th>BH</th><th>HE</th><th>AN</th><th>GR</th><th>INS</th><th>AT</th><th>Faltas</th><th>Observação</th>
               </tr>
             </thead>
             <tbody>
               ${unit.rows.map(r => `
                 <tr>
                   <td>${escapeHtml(r.matricula)}</td><td><strong>${escapeHtml(r.nome)}</strong></td><td>${escapeHtml(r.cargo)}</td><td>${escapeHtml(r.periodo)}</td>
-                  <td>${escapeHtml(r.dt)}</td><td>${escapeHtml(r.bh)}</td><td>${escapeHtml(r.he)}</td><td>${escapeHtml(r.an)}</td><td>${escapeHtml(r.gr)}</td><td>${escapeHtml(r.ins)}</td><td>${escapeHtml(r.at)}</td><td>${escapeHtml(r.observacao)}</td>
+                  <td>${escapeHtml(r.dt)}</td><td>${escapeHtml(r.bh)}</td><td>${escapeHtml(r.he)}</td><td>${escapeHtml(r.an)}</td><td>${escapeHtml(r.gr)}</td><td>${escapeHtml(r.ins)}</td><td>${escapeHtml(r.at)}</td><td>${escapeHtml(r.faltas ?? 0)}</td><td>${escapeHtml(r.observacao)}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -825,6 +946,7 @@ function pointView() {
               <th>GR *</th>
               <th>INS *</th>
               <th>AT *</th>
+              <th>Faltas *</th>
               <th></th>
               <th>Observação *</th>
             </tr>
@@ -910,7 +1032,7 @@ function pointRowsHtml() {
           ${["Integral","20h","30h","40h","Plantão"].map(p => `<option ${r.periodo === p ? "selected" : ""}>${p}</option>`).join("")}
         </select>
       </td>
-      ${["dt","bh","he","an","gr","ins","at"].map(k => `<td><input class="cell-sm" type="number" min="0" step="1" data-key="${k}" value="${escapeHtml(r[k])}" required /></td>`).join("")}
+      ${["dt","bh","he","an","gr","ins","at","faltas"].map(k => `<td><input class="cell-sm" type="number" min="0" step="1" data-key="${k}" value="${escapeHtml(r[k])}" required /></td>`).join("")}
       <td><button class="remove-row" data-remove-row="${i}" title="Remover">×</button></td>
       <td><input class="cell-obs" data-key="observacao" value="${escapeHtml(r.observacao)}" placeholder="Sem observação" required /></td>
     </tr>
@@ -933,7 +1055,7 @@ function filePreviewHtml() {
 
 function completionPercent(rows = state.pointRows) {
   if (!rows.length) return 0;
-  const keys = ["matricula","nome","cargo","periodo","dt","bh","he","an","gr","ins","at","observacao"];
+  const keys = ["matricula","nome","cargo","periodo","dt","bh","he","an","gr","ins","at","faltas","observacao"];
   let total = rows.length * keys.length;
   let filled = 0;
   rows.forEach(r => keys.forEach(k => {
@@ -985,7 +1107,7 @@ function bindPointPage() {
   $("#addRowBtn")?.addEventListener("click", () => {
     state.pointRows.push({
       matricula: "", nome: "", cargo: "", periodo: "",
-      dt: "", bh: "", he: "", an: "", gr: "", ins: "", at: "", observacao: ""
+      dt: "", bh: "", he: "", an: "", gr: "", ins: "", at: "", faltas: "", observacao: ""
     });
     $("#pointBody").innerHTML = pointRowsHtml();
     bindPointPage();
@@ -1153,6 +1275,7 @@ function submitPoint() {
         gr: Number(r.gr || 0),
         ins: Number(r.ins || 0),
         at: Number(r.at || 0),
+        faltas: Number(r.faltas || 0),
         observacao: r.observacao || "Sem observação"
       }));
 
@@ -1277,14 +1400,14 @@ function reviewView(unitId) {
             <thead>
               <tr>
                 <th>Matrícula</th><th>Servidor</th><th>Cargo</th><th>Período</th>
-                <th>DT</th><th>BH</th><th>HE</th><th>AN</th><th>GR</th><th>INS</th><th>AT</th><th>Observação</th>
+                <th>DT</th><th>BH</th><th>HE</th><th>AN</th><th>GR</th><th>INS</th><th>AT</th><th>Faltas</th><th>Observação</th>
               </tr>
             </thead>
             <tbody>
               ${unit.rows.map(r => `
                 <tr>
                   <td>${escapeHtml(r.matricula)}</td><td><strong>${escapeHtml(r.nome)}</strong></td><td>${escapeHtml(r.cargo)}</td><td>${escapeHtml(r.periodo)}</td>
-                  <td>${escapeHtml(r.dt)}</td><td>${escapeHtml(r.bh)}</td><td>${escapeHtml(r.he)}</td><td>${escapeHtml(r.an)}</td><td>${escapeHtml(r.gr)}</td><td>${escapeHtml(r.ins)}</td><td>${escapeHtml(r.at)}</td><td>${escapeHtml(r.observacao)}</td>
+                  <td>${escapeHtml(r.dt)}</td><td>${escapeHtml(r.bh)}</td><td>${escapeHtml(r.he)}</td><td>${escapeHtml(r.an)}</td><td>${escapeHtml(r.gr)}</td><td>${escapeHtml(r.ins)}</td><td>${escapeHtml(r.at)}</td><td>${escapeHtml(r.faltas ?? 0)}</td><td>${escapeHtml(r.observacao)}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -1518,6 +1641,25 @@ function bindCurrentPage() {
   $$("[data-review]").forEach(btn => btn.addEventListener("click", () => navigate("review", { unitId: btn.dataset.review })));
 
   if (state.currentPage === "point") bindPointPage();
+
+  const reloadRhDashboard = async () => {
+    if (state.role !== "rh") return;
+    const competence = $("#rhCompetenceFilter")?.value || "";
+    const unitId = $("#rhUnitFilter")?.value || "";
+    const params = new URLSearchParams();
+    if (competence) params.set("competence", competence);
+    if (unitId) params.set("unit_id", unitId);
+
+    try {
+      state.rhDashboard = await api(`/dashboard/rh?${params.toString()}`);
+      navigate("dashboard");
+    } catch (e) {
+      toast(e.message || "Erro ao atualizar o dashboard do RH.", "error");
+    }
+  };
+
+  $("#rhCompetenceFilter")?.addEventListener("change", reloadRhDashboard);
+  $("#rhUnitFilter")?.addEventListener("change", reloadRhDashboard);
 
   $("#statusFilter")?.addEventListener("change", e => {
     $$("#approvalTable tbody tr").forEach(tr => {

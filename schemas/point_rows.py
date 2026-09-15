@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class PointRowIn(BaseModel):
     matricula: str = Field(max_length=20)
     nome: str = Field(max_length=150)
@@ -12,7 +13,9 @@ class PointRowIn(BaseModel):
     gr: int = Field(default=0, ge=0)
     ins: int = Field(default=0, ge=0)
     at: int = Field(default=0, ge=0)
+    faltas: int = Field(default=0, ge=0)
     observacao: str = Field(default="Sem observação", max_length=500)
+
 
 class PointRowOut(PointRowIn):
     id: int

@@ -788,7 +788,7 @@ input:focus, select:focus, textarea:focus {
 
 .sidebar {
 
-  background: #071b2f;
+  background: #102039;
 
   color: white;
 
@@ -823,7 +823,6 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -833,8 +832,8 @@ input:focus, select:focus, textarea:focus {
   width: fit-content;
   max-width: 290px;
   min-height: 72px;
-  padding: 10px 14px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .10);
+  padding: 6px 0;
+  box-shadow: none;
 }
 
 .brand-logo {
@@ -852,10 +851,11 @@ input:focus, select:focus, textarea:focus {
 
 .brand-logo-shell--sidebar {
   width: 100%;
-  min-height: 82px;
-  padding: 11px 12px;
-  border-color: rgba(255, 255, 255, .08);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, .10);
+  min-height: 72px;
+  padding: 6px 4px 10px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .brand-logo--sidebar {
@@ -1972,3 +1972,133 @@ tbody tr:hover { background: #fbfcfe; }
   .submit-bar .btn { flex: 1; }
 
 }
+/* ===== DASHBOARD EXCLUSIVO DO RH ===== */
+.rh-dashboard-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+
+.rh-dashboard-filters .field {
+  margin: 0;
+  min-width: 190px;
+}
+
+.rh-dashboard-filters select {
+  min-height: 40px;
+}
+
+.rh-metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.rh-chart-list {
+  display: grid;
+  gap: 14px;
+}
+
+.rh-chart-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(100px, 1fr) 42px;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.rh-chart-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #344054;
+}
+
+.rh-chart-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #edf1f5;
+  overflow: hidden;
+}
+
+.rh-chart-bar {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.rh-chart-value {
+  text-align: right;
+  font-weight: 850;
+  color: var(--text);
+}
+
+.rh-status-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rh-status-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+
+.rh-status-item strong,
+.rh-status-item span {
+  display: block;
+}
+
+.rh-status-item strong {
+  font-size: 22px;
+}
+
+.rh-status-item span {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+@media (max-width: 1350px) {
+  .rh-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .rh-metrics,
+  .rh-status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .rh-metrics,
+  .rh-status-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .rh-dashboard-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .rh-dashboard-filters .field {
+    min-width: 0;
+  }
+
+  .rh-chart-row {
+    grid-template-columns: 1fr 42px;
+  }
+
+  .rh-chart-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* A nova coluna Faltas aumenta um pouco a largura da tabela de ponto. */
+.point-table { min-width: 1460px; }

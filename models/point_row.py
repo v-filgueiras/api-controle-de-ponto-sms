@@ -3,6 +3,7 @@ from database.connect import Base
 from sqlalchemy import Column, Integer, String, SmallInteger, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship
 
+
 class PointRows(Base):
     __tablename__ = "point_rows"
 
@@ -19,6 +20,7 @@ class PointRows(Base):
     gr = Column(SmallInteger, nullable=False, default=0)
     ins = Column(SmallInteger, nullable=False, default=0)
     at = Column(SmallInteger, nullable=False, default=0)
+    faltas = Column(SmallInteger, nullable=False, default=0)
     observacao = Column(String(500), nullable=False, default="Sem observação")
 
     __table_args__ = (
@@ -29,6 +31,7 @@ class PointRows(Base):
         CheckConstraint("gr >= 0", name="ck_point_rows_gr"),
         CheckConstraint("ins >= 0", name="ck_point_rows_ins"),
         CheckConstraint("at >= 0", name="ck_point_rows_at"),
+        CheckConstraint("faltas >= 0", name="ck_point_rows_faltas"),
     )
 
     fechamento = relationship("Fechamentos", back_populates="rows")
