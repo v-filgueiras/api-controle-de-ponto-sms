@@ -1438,7 +1438,7 @@ function reviewView(unitId) {
                 <span>Assinatura: ${signatureLabel(unit.signatureMethod)}</span>
               </div>
             </div>
-            <button class="btn btn--outline btn--block" style="margin-top:10px" id="openDocBtn">Visualizar documento</button>
+            <button class="btn btn--outline btn--block" style="margin-top:10px" id="openDocBtn" data-document-id="${unit.document?.id ?? ""}">Visualizar documento</button>
           </div>
         </div>
 
@@ -1707,13 +1707,14 @@ function bindCurrentPage() {
     }
   }));
 
-  $("#openDocBtn")?.addEventListener("click", async () => {
-    if (!unit.document?.id) {
+  $("#openDocBtn")?.addEventListener("click", async (e) => {
+    const documentId = e.currentTarget.dataset.documentId;
+    if (!documentId) {
       toast("Nenhum documento foi anexado a este fechamento.", "error");
       return;
     }
 
-    await abrirDocumento(unit.document.id);
+    await abrirDocumento(Number(documentId));
   });
 
   $("#newUserBtn")?.addEventListener("click", openNewUserModal);
