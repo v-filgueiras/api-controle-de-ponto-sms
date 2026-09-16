@@ -5,13 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Controle de Ponto | Secretaria Municipal de Saúde</title>
   <meta name="description" content="Sistema de controle, fechamento e aprovação de ponto da Secretaria Municipal de Saúde." />
-  <link rel="stylesheet" href="static/styles.css?v=20260916-v5b" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="static/styles.css?v=20260916-login9" />
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <section id="loginView" class="login-shell">
-    <div class="login-visual" aria-hidden="true"></div>
+    <div class="login-visual" aria-hidden="true">
+      <div class="login-visual__top">
+        <div class="brand">
+          <div class="brand-mark">SMS</div>
+          <div>
+            <strong>Secretaria Municipal de Saúde</strong>
+            <span>Controle de Ponto</span>
+          </div>
+        </div>
+      </div>
+      <div class="login-watermark" aria-hidden="true">SMS</div>
+    </div>
 
     <div class="login-panel">
       <div class="login-panel-inner">
@@ -25,9 +39,9 @@
           </div>
 
           <div class="login-heading">
-            <span class="login-system-label">SECRETARIA MUNICIPAL DE SAÚDE</span>
-            <h1>Acesso ao Sistema</h1>
-            <p>Entre com suas credenciais para acessar o Controle de Ponto.</p>
+            <span class="eyebrow">SECRETARIA MUNICIPAL DE SAÚDE</span>
+            <h2>Acesse sua conta</h2>
+            <p class="muted">Entre com suas credenciais para acessar o Controle de Ponto.</p>
           </div>
 
           <form id="loginForm" novalidate>
@@ -35,7 +49,7 @@
               <span>E-mail</span>
               <div class="input-with-icon">
                 <span class="field-icon" aria-hidden="true">○</span>
-                <input id="loginEmail" type="email" placeholder="Digite seu e-mail" required />
+                <input id="loginEmail" type="email" placeholder="seu.usuario@saude.gov.br" required autocomplete="username" />
               </div>
             </label>
 
@@ -43,7 +57,7 @@
               <span>Senha</span>
               <div class="password-wrap input-with-icon">
                 <span class="field-icon lock-icon" aria-hidden="true">□</span>
-                <input id="loginPassword" type="password" placeholder="Digite sua senha" required />
+                <input id="loginPassword" type="password" placeholder="Digite sua senha" required autocomplete="current-password" />
                 <button type="button" class="icon-button" id="togglePassword" aria-label="Mostrar senha">◉</button>
               </div>
             </label>
@@ -53,6 +67,7 @@
                 <input type="checkbox" id="rememberAccess" />
                 <span>Lembrar meu acesso</span>
               </label>
+              <a class="support-text" href="#" id="forgotPasswordLink">Esqueceu a senha?</a>
             </div>
 
             <button class="btn btn--primary btn--block login-submit" type="submit">
@@ -60,8 +75,15 @@
               ACESSAR SISTEMA
             </button>
           </form>
-        </div>
 
+          <div class="login-security">
+            <div class="security-icon" aria-hidden="true">✓</div>
+            <div>
+              <strong>Conexão segura</strong>
+              <span>Seus dados são protegidos e o acesso é registrado para fins de auditoria.</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -109,6 +131,6 @@
 
   <div id="modalRoot"></div>
 
-  <script src="static/app.js?v=20260916-v5b"></script>
+  <script src="static/app.js?v=20260916-login9"></script>
 </body>
 </html>

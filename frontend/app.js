@@ -3500,5 +3500,10 @@ $("#togglePassword").addEventListener("click", () => {
   p.type = p.type === "password" ? "text" : "password";
 });
 
+$("#forgotPasswordLink")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  toast("Solicite a redefinição de senha ao Administrador ou RH.", "");
+});
+
 $("#logoutBtn").addEventListener("click", logout);
 $("#menuBtn").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
