@@ -1,10 +1,70 @@
-
 const API_URL = "";
 const TOKEN_KEY = "sms-ponto-token";
 const USER_KEY = "sms-ponto-user";
 
+let currentProfilePhotoUrl = null;
+
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+function renderAvatarElement(element, imageUrl = null) {
+  if (!element || !state.user) return;
+
+  if (imageUrl) {
+    element.innerHTML = `<img src="${imageUrl}" alt="Foto de perfil de ${escapeHtml(state.user.user)}">`;
+    element.classList.add("avatar--photo");
+  } else {
+    element.textContent = state.user.initials;
+    element.classList.remove("avatar--photo");
+  }
+}
+
+function renderCurrentUserAvatars() {
+  renderAvatarElement($("#sidebarAvatar"), currentProfilePhotoUrl);
+  renderAvatarElement($("#topAvatar"), currentProfilePhotoUrl);
+  renderAvatarElement($("#profileAvatarLarge"), currentProfilePhotoUrl);
+}
+
+async function refreshCurrentProfilePhoto() {
+  if (!state.user?.id) return;
+
+  try {
+    const token = getToken();
+    const response = await fetch(
+      `${API_URL}/usuarios/${state.user.id}/foto?t=${Date.now()}`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      }
+    );
+
+    if (response.status === 404) {
+      if (currentProfilePhotoUrl) {
+        URL.revokeObjectURL(currentProfilePhotoUrl);
+        currentProfilePhotoUrl = null;
+      }
+      renderCurrentUserAvatars();
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Erro HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    if (currentProfilePhotoUrl) {
+      URL.revokeObjectURL(currentProfilePhotoUrl);
+    }
+
+    currentProfilePhotoUrl = URL.createObjectURL(blob);
+    renderCurrentUserAvatars();
+
+  } catch (error) {
+    console.warn("Não foi possível carregar a foto de perfil:", error);
+    renderCurrentUserAvatars();
+  }
 }
 
 async function api(path, options = {}) {
@@ -67,7 +127,7 @@ function mapUser(u) {
     perfil: u.perfil === "admin" ? "Administrador" : u.perfil === "rh" ? "RH" : "Coordenador",
     perfilRaw: u.perfil,
     unit_id: u.unit_id,
-    unidade: unit?.name || "Secretaria Municipal de Saúde",
+    unidade: unit?.name || (u.perfil === "coordinator" ? "Sem unidade vinculada" : "Secretaria Municipal de Saúde"),
     status: u.status ? "Ativo" : "Inativo"
   };
 }
@@ -89,7 +149,8 @@ function mapFechamento(f, unit) {
     submittedAt: f.submitted_at ? new Date(f.submitted_at).toLocaleString("pt-BR") : "",
     rhNote: f.rh_note || "",
     rhDecisionAt: f.rh_decision_at ? new Date(f.rh_decision_at).toLocaleString("pt-BR") : "",
-    rows: f.rows || []
+    rows: f.rows || [],
+    editRequest: unit.editRequest || null
   };
 }
 
@@ -143,6 +204,13 @@ async function carregarDados() {
       console.warn("Não foi possível carregar o dashboard do RH:", e);
       state.rhDashboard = null;
     }
+
+    try {
+      state.editRequests = await api("/solicitacoes-edicao?status=pendente");
+    } catch (e) {
+      console.warn("Não foi possível carregar solicitações de edição:", e);
+      state.editRequests = [];
+    }
   }
 
   if (state.role === "coordinator" && state.user?.unit_id) {
@@ -151,6 +219,14 @@ async function carregarDados() {
     if (unitIndex >= 0) {
       state.units[unitIndex].coordinator = state.user.user;
       state.units[unitIndex] = mapFechamento(f, state.units[unitIndex]);
+
+      try {
+        state.units[unitIndex].editRequest =
+          await api(`/fechamentos/${f.id}/solicitacao-edicao`);
+      } catch (e) {
+        console.warn("Solicitação de edição não carregada:", e);
+        state.units[unitIndex].editRequest = null;
+      }
     }
   }
 
@@ -213,6 +289,7 @@ const state = {
   uploadedFile: null,
   signatureMethod: "",
   rhDashboard: null,
+  editRequests: [],
   units: [
     {
       id: 1, name: "USF Nova Três Lagoas", coordinator: "Coord. Nova Três Lagoas", status: "rascunho", competence: "SETEMBRO/2026",
@@ -292,7 +369,7 @@ function resetDemoData() {
 }
 
 function myUnit() {
-  return state.units.find(u => u.coordinator === state.user?.user) || state.units[0];
+  return state.units.find(u => u.id === state.user?.unit_id) || null;
 }
 
 function logHistory(action, unit, status) {
@@ -328,6 +405,7 @@ const roles = {
       ["dashboard", "⌂", "Painel"],
       ["approvals", "✓", "Aprovações"],
       ["units", "⌘", "Unidades"],
+      ["users", "♙", "Coordenadores"],
       ["history", "↺", "Histórico"],
       ["profile", "○", "Meu perfil"]
     ]
@@ -400,10 +478,10 @@ async function setLoginFromUser(userData) {
 
   $("#sidebarUser").textContent = state.user.user;
   $("#sidebarRole").textContent = state.user.name;
-  $("#sidebarAvatar").textContent = state.user.initials;
-  $("#topAvatar").textContent = state.user.initials;
+  renderCurrentUserAvatars();
 
   renderNav();
+  await refreshCurrentProfilePhoto();
 
   try {
     await carregarDados();
@@ -415,6 +493,11 @@ async function setLoginFromUser(userData) {
 }
 
 function logout() {
+  if (currentProfilePhotoUrl) {
+    URL.revokeObjectURL(currentProfilePhotoUrl);
+    currentProfilePhotoUrl = null;
+  }
+
   state.role = null;
   state.user = null;
   localStorage.removeItem(TOKEN_KEY);
@@ -457,9 +540,9 @@ function navigate(page, params = {}) {
 
   if (page === "point" && state.role === "coordinator") {
     const unit = myUnit();
-    state.pointRows = unit.rows;
-    state.uploadedFile = unit.document;
-    state.signatureMethod = unit.signatureMethod || "";
+    state.pointRows = unit?.rows || [];
+    state.uploadedFile = unit?.document || null;
+    state.signatureMethod = unit?.signatureMethod || "";
   }
 
   const content = $("#content");
@@ -477,6 +560,21 @@ function navigate(page, params = {}) {
 
 function coordinatorDashboard() {
   const unit = myUnit();
+
+  if (!unit) {
+    return `
+      <div class="page-intro">
+        <div>
+          <h1>Olá, ${escapeHtml(state.user?.user || "Coordenador")}</h1>
+          <p>Seu usuário está ativo, mas não está vinculado a uma unidade de saúde.</p>
+        </div>
+      </div>
+      <div class="notice notice--warning">
+        Solicite ao RH ou ao Administrador que vincule seu usuário a uma unidade antes de realizar um fechamento.
+      </div>
+    `;
+  }
+
   const percent = completionPercent(unit.rows);
   const step1Done = true;
   const step2Done = ["pendente", "aprovado"].includes(unit.status);
@@ -823,6 +921,21 @@ function dashboardView() {
 
 function pointView() {
   const unit = myUnit();
+
+  if (!unit) {
+    return `
+      <div class="page-intro">
+        <div>
+          <h1>Fechamento de ponto</h1>
+          <p>Nenhuma unidade está vinculada ao seu usuário.</p>
+        </div>
+      </div>
+      <div class="notice notice--warning">
+        O fechamento ficará disponível quando o RH ou o Administrador vincular você a uma unidade.
+      </div>
+    `;
+  }
+
   const locked = unit.status === "pendente" || unit.status === "aprovado";
 
   if (locked) {
@@ -840,6 +953,17 @@ function pointView() {
           ? `Este fechamento já foi aprovado pelo RH em ${unit.rhDecisionAt || "data não registrada"} e está bloqueado para edição.`
           : `Este fechamento foi enviado em ${unit.submittedAt || "data não registrada"} e está aguardando a análise do RH. Ele fica bloqueado para edição até que haja uma decisão.`}
       </div>
+
+      ${unit.editRequest?.status === "pendente" ? `
+        <div class="notice notice--info" style="margin-top:12px">
+          <strong>Solicitação de edição aguardando o RH.</strong><br>
+          Motivo: ${escapeHtml(unit.editRequest.reason)}
+        </div>
+      ` : `
+        <div class="actions" style="margin-top:12px">
+          <button class="btn btn--secondary" id="requestEditBtn">Solicitar edição ao RH</button>
+        </div>
+      `}
 
       <div class="card" style="margin-top:16px">
         <div class="section-head">
@@ -1333,6 +1457,48 @@ function approvalsView() {
       </div>
     </div>
 
+    ${state.editRequests.length ? `
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-head">
+          <div>
+            <h3>Solicitações de edição</h3>
+            <p>${state.editRequests.length} solicitação(ões) aguardando decisão</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Unidade</th>
+                <th>Coordenador</th>
+                <th>Competência</th>
+                <th>Motivo</th>
+                <th>Solicitado em</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.editRequests.map(r => `
+                <tr>
+                  <td><strong>${escapeHtml(r.unit_name)}</strong></td>
+                  <td>${escapeHtml(r.requested_by_name)}</td>
+                  <td>${escapeHtml(r.competence)}</td>
+                  <td style="max-width:360px">${escapeHtml(r.reason)}</td>
+                  <td>${r.created_at ? new Date(r.created_at).toLocaleString("pt-BR") : "—"}</td>
+                  <td>
+                    <div class="actions">
+                      <button class="table-action" data-edit-request-decision="approved" data-request-id="${r.id}">Autorizar</button>
+                      <button class="table-action" data-edit-request-decision="rejected" data-request-id="${r.id}">Negar</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ""}
+
     <div class="card">
       <div class="section-head">
         <div>
@@ -1466,44 +1632,225 @@ function reviewView(unitId) {
   `;
 }
 
+/* =====================================================================
+   UNIDADES — layout v5
+   ===================================================================== */
+
+const UNIT_FLOW = {
+  nao_enviado: { pct: 12, step: "Aguardando preenchimento" },
+  rascunho:    { pct: 35, step: "Em preenchimento pela unidade" },
+  correcao:    { pct: 55, step: "Correção solicitada pelo RH" },
+  pendente:    { pct: 78, step: "Em análise do RH" },
+  rejeitado:   { pct: 100, step: "Fechamento rejeitado" },
+  aprovado:    { pct: 100, step: "Fechamento aprovado" }
+};
+
+const unitsUi = { query: "", status: "todos", mode: "grid" };
+
+function unitMark(name) {
+  const clean = String(name || "U").replace(/^(USF|UBS|CAPS|UPA|CEO|SMS)\s+/i, "").trim() || String(name || "U");
+  return clean.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join("") || "U";
+}
+
+function unitsFiltered() {
+  const q = unitsUi.query.trim().toLowerCase();
+  return state.units.filter(u => {
+    const okStatus = unitsUi.status === "todos" || u.status === unitsUi.status;
+    const okQuery = !q
+      || String(u.name || "").toLowerCase().includes(q)
+      || String(u.coordinator || "").toLowerCase().includes(q)
+      || String(u.competence || "").toLowerCase().includes(q);
+    return okStatus && okQuery;
+  });
+}
+
 function unitsView() {
+  const isAdmin = state.role === "admin";
+
   return `
-    <div class="page-intro">
-      <div>
-        <h1>Unidades</h1>
-        <p>Visão consolidada das unidades, coordenadores vinculados e situação do fechamento.</p>
+    <div class="head-v5">
+      <div class="head-v5__text">
+        <span class="head-v5__eyebrow">ESTRUTURA</span>
+        <h1>Unidades de saúde</h1>
+        <p>Acompanhe coordenadores vinculados, quantidade de servidores e a situação do fechamento de cada unidade.</p>
       </div>
-      ${state.role === "admin" ? `<div class="actions"><button class="btn btn--primary" id="newUnitBtn">+ Nova unidade</button></div>` : ""}
+      <div class="head-v5__actions">
+        <button class="btn btn--outline" id="unitsExportBtn">↓ Exportar CSV</button>
+        ${isAdmin ? `<button class="btn btn--primary" id="newUnitBtn">+ Nova unidade</button>` : ""}
+      </div>
     </div>
 
-    <div class="card">
-      <div class="section-head">
-        <div>
-          <h3>Unidades cadastradas</h3>
-          <p>${state.units.length} unidade(s)</p>
+    ${unitsStats()}
+
+    <section class="panel-v5">
+      <div class="panel-v5__toolbar">
+        <div class="search-v5">
+          <span aria-hidden="true">⌕</span>
+          <input id="unitSearch" type="search" placeholder="Buscar unidade, coordenador ou competência..." value="${escapeHtml(unitsUi.query)}" />
+        </div>
+
+        <div class="viewtoggle-v5" role="group" aria-label="Modo de exibição">
+          <button type="button" data-units-mode="grid" class="${unitsUi.mode === "grid" ? "is-active" : ""}">▦ Cards</button>
+          <button type="button" data-units-mode="table" class="${unitsUi.mode === "table" ? "is-active" : ""}">☰ Tabela</button>
         </div>
       </div>
-      ${unitsTable(state.role === "rh")}
+
+      <div class="chips-v5" id="unitChips">${unitsChips()}</div>
+
+      <div id="unitsResult">${unitsResult()}</div>
+    </section>
+  `;
+}
+
+function unitsStats() {
+  const all = state.units;
+  const count = s => all.filter(u => u.status === s).length;
+  const servers = all.reduce((acc, u) => acc + (u.rows?.length || 0), 0);
+  const approved = count("aprovado");
+  const rate = all.length ? Math.round((approved / all.length) * 100) : 0;
+
+  const cards = [
+    ["Unidades ativas", all.length, `${servers} servidor(es) no total`, "primary", "▦"],
+    ["Aguardando RH", count("pendente"), "fechamentos em análise", "warning", "◷"],
+    ["Aprovadas", approved, `${rate}% da competência concluída`, "success", "✓"],
+    ["Pendências", count("correcao") + count("rejeitado") + count("nao_enviado"), "correções, rejeições e não enviados", "danger", "!"]
+  ];
+
+  return `
+    <div class="stats-v5">
+      ${cards.map(([label, value, hint, tone, icon]) => `
+        <article class="stat-v5 stat-v5--${tone}">
+          <div class="stat-v5__icon" aria-hidden="true">${icon}</div>
+          <div class="stat-v5__body">
+            <span>${label}</span>
+            <strong>${value}</strong>
+            <small>${hint}</small>
+          </div>
+        </article>
+      `).join("")}
     </div>
   `;
 }
 
-function unitsTable(showReview) {
+function unitsChips() {
+  const items = [["todos", "Todas"], ...Object.keys(statusMeta).map(k => [k, statusMeta[k][0]])];
+  return items.map(([key, label]) => {
+    const total = key === "todos" ? state.units.length : state.units.filter(u => u.status === key).length;
+    return `
+      <button type="button" class="chip-v5 ${unitsUi.status === key ? "is-active" : ""}" data-unit-status="${key}">
+        ${label}<i>${total}</i>
+      </button>
+    `;
+  }).join("");
+}
+
+function unitsResult() {
+  const list = unitsFiltered();
+
+  if (!list.length) {
+    return `
+      <div class="empty-v5">
+        <div class="empty-v5__mark" aria-hidden="true">⌕</div>
+        <strong>Nenhuma unidade encontrada</strong>
+        <p>Ajuste a busca ou selecione outro status para ver os resultados.</p>
+      </div>
+    `;
+  }
+
+  return unitsUi.mode === "table"
+    ? unitsTable(list)
+    : `<div class="unit-grid-v5">${list.map(unitCard).join("")}</div>`;
+}
+
+function unitCard(u) {
+  const flow = UNIT_FLOW[u.status] || { pct: 10, step: "Situação não informada" };
+  const [, tone] = statusMeta[u.status] || ["", "muted"];
+  const canReview = state.role === "rh" && ["pendente", "correcao", "rejeitado", "aprovado"].includes(u.status);
+  const canDelete = state.role === "admin";
+
   return `
-    <div class="table-wrap">
+    <article class="unit-v5 unit-v5--${tone}">
+      <header class="unit-v5__head">
+        <div class="unit-v5__mark" aria-hidden="true">${unitMark(u.name)}</div>
+        <div class="unit-v5__title">
+          <strong>${escapeHtml(u.name)}</strong>
+          <span>${escapeHtml(u.competence || "—")}</span>
+        </div>
+        ${badge(u.status)}
+      </header>
+
+      <dl class="unit-v5__meta">
+        <div>
+          <dt>Coordenador</dt>
+          <dd>${escapeHtml(u.coordinator || "—")}</dd>
+        </div>
+        <div>
+          <dt>Servidores</dt>
+          <dd>${u.rows?.length || 0}</dd>
+        </div>
+        <div>
+          <dt>Envio</dt>
+          <dd>${escapeHtml(u.submittedAt || "Não enviado")}</dd>
+        </div>
+      </dl>
+
+      <div class="unit-v5__flow">
+        <div class="unit-v5__bar"><i style="width:${flow.pct}%"></i></div>
+        <span>${flow.step}</span>
+      </div>
+
+      <footer class="unit-v5__foot">
+        ${canReview ? `<button class="btn btn--secondary btn--sm" data-v5 data-review="${u.id}">Abrir fechamento</button>` : ""}
+        ${canDelete ? `<button class="btn btn--outline btn--sm" data-v5 data-delete-unit="${u.id}">Excluir</button>` : ""}
+        ${!canReview && !canDelete ? `<span class="unit-v5__hint">Somente leitura</span>` : ""}
+      </footer>
+    </article>
+  `;
+}
+
+function unitsTable(list = state.units) {
+  const showReview = state.role === "rh";
+  const showAdminActions = state.role === "admin";
+
+  return `
+    <div class="table-wrap table-wrap--v5">
       <table>
         <thead>
-          <tr><th>Unidade</th><th>Coordenador</th><th>Servidores</th><th>Competência</th><th>Status</th>${showReview ? "<th></th>" : ""}</tr>
+          <tr>
+            <th>Unidade</th>
+            <th>Coordenador</th>
+            <th>Servidores</th>
+            <th>Competência</th>
+            <th>Status</th>
+            ${(showReview || showAdminActions) ? "<th>Ações</th>" : ""}
+          </tr>
         </thead>
         <tbody>
-          ${state.units.map(u => `
+          ${list.map(u => `
             <tr>
-              <td><strong>${u.name}</strong></td>
-              <td>${u.coordinator}</td>
-              <td>${u.rows.length}</td>
-              <td>${u.competence}</td>
+              <td>
+                <div class="cell-unit-v5">
+                  <span class="unit-v5__mark unit-v5__mark--sm" aria-hidden="true">${unitMark(u.name)}</span>
+                  <div>
+                    <strong>${escapeHtml(u.name)}</strong>
+                    <small>${escapeHtml(u.submittedAt || "Sem envio registrado")}</small>
+                  </div>
+                </div>
+              </td>
+              <td>${escapeHtml(u.coordinator || "—")}</td>
+              <td>${u.rows?.length || 0}</td>
+              <td>${escapeHtml(u.competence || "—")}</td>
               <td>${badge(u.status)}</td>
-              ${showReview ? `<td>${["pendente","correcao","rejeitado","aprovado"].includes(u.status) ? `<button class="table-action" data-review="${u.id}">Abrir</button>` : ""}</td>` : ""}
+              ${showReview ? `
+                <td>
+                  ${["pendente","correcao","rejeitado","aprovado"].includes(u.status)
+                    ? `<button class="table-action" data-v5 data-review="${u.id}">Abrir</button>`
+                    : "—"}
+                </td>
+              ` : ""}
+              ${showAdminActions ? `
+                <td><button class="table-action" data-v5 data-delete-unit="${u.id}">Excluir unidade</button></td>
+              ` : ""}
             </tr>
           `).join("")}
         </tbody>
@@ -1512,125 +1859,756 @@ function unitsTable(showReview) {
   `;
 }
 
-function usersView() {
-  return `
-    <div class="page-intro">
-      <div>
-        <h1>Usuários e hierarquia</h1>
-        <p>Cadastre usuários, defina perfis de acesso e vincule coordenadores às respectivas unidades.</p>
-      </div>
-      <div class="actions">
-        <button class="btn btn--primary" id="newUserBtn">+ Novo usuário</button>
-      </div>
-    </div>
+function refreshUnitsResult() {
+  const box = $("#unitsResult");
+  if (box) box.innerHTML = unitsResult();
+  const chips = $("#unitChips");
+  if (chips) chips.innerHTML = unitsChips();
+  bindUnitChips();
+}
 
-    <div class="grid grid--3" style="margin-bottom:16px">
-      <div class="card card-pad">
-        <span class="role-chip">NÍVEL 1</span>
-        <h3 style="margin-bottom:6px">Administrador</h3>
-        <p class="muted" style="font-size:12px">Gerencia estrutura, perfis e permissões.</p>
-      </div>
-      <div class="card card-pad">
-        <span class="role-chip">NÍVEL 2</span>
-        <h3 style="margin-bottom:6px">RH</h3>
-        <p class="muted" style="font-size:12px">Visualiza todas as unidades e decide aprovações.</p>
-      </div>
-      <div class="card card-pad">
-        <span class="role-chip">NÍVEL 3</span>
-        <h3 style="margin-bottom:6px">Coordenador</h3>
-        <p class="muted" style="font-size:12px">Acessa apenas as unidades vinculadas ao próprio usuário.</p>
-      </div>
-    </div>
+function bindUnitChips() {
+  $$("[data-unit-status]").forEach(btn => btn.addEventListener("click", () => {
+    unitsUi.status = btn.dataset.unitStatus;
+    refreshUnitsResult();
+  }));
+}
 
-    <div class="card">
-      <div class="section-head">
-        <div><h3>Usuários cadastrados</h3><p>${state.users.length} usuário(s)</p></div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Unidade / Escopo</th><th>Status</th><th></th></tr>
-          </thead>
-          <tbody>
-            ${state.users.map((u,i) => `
-              <tr>
-                <td><strong>${u.nome}</strong></td>
-                <td>${u.email}</td>
-                <td><span class="role-chip">${u.perfil}</span></td>
-                <td>${u.unidade}</td>
-                <td><span class="badge badge--success">${u.status}</span></td>
-                <td><button class="table-action" data-edit-user="${i}">Editar</button></td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
+function bindUnitsPage() {
+  bindUnitChips();
+
+  $("#unitSearch")?.addEventListener("input", (e) => {
+    unitsUi.query = e.target.value;
+    const box = $("#unitsResult");
+    if (box) box.innerHTML = unitsResult();
+  });
+
+  $$("[data-units-mode]").forEach(btn => btn.addEventListener("click", () => {
+    unitsUi.mode = btn.dataset.unitsMode;
+    $$("[data-units-mode]").forEach(b => b.classList.toggle("is-active", b === btn));
+    const box = $("#unitsResult");
+    if (box) box.innerHTML = unitsResult();
+  }));
+
+  $("#unitsExportBtn")?.addEventListener("click", () => {
+    const rows = [["Unidade", "Coordenador", "Servidores", "Competencia", "Status", "Envio"]];
+    unitsFiltered().forEach(u => rows.push([
+      u.name, u.coordinator || "—", u.rows?.length || 0, u.competence || "—",
+      statusMeta[u.status]?.[0] || u.status, u.submittedAt || "Não enviado"
+    ]));
+    downloadCsv("unidades.csv", rows);
+  });
+
+  $("#unitsResult")?.addEventListener("click", (e) => {
+    const review = e.target.closest("[data-review]");
+    if (review) {
+      navigate("review", { unitId: review.dataset.review });
+      return;
+    }
+    const del = e.target.closest("[data-delete-unit]");
+    if (del) deleteUnitById(Number(del.dataset.deleteUnit));
+  });
+}
+
+async function deleteUnitById(unitId) {
+  const unit = state.units.find(u => u.id === unitId);
+  if (!unit) return;
+
+  if (!window.confirm(`Excluir a unidade "${unit.name}"? Os fechamentos históricos serão preservados.`)) return;
+
+  try {
+    await api(`/units/${unitId}`, { method: "DELETE" });
+    toast("Unidade excluída do uso ativo.", "success");
+    await carregarDados();
+    navigate("units");
+  } catch (e) {
+    toast(e.message || "Erro ao excluir unidade.", "error");
+  }
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast("Arquivo exportado.", "success");
+}
+
+/* =====================================================================
+   AUDITORIA / HISTÓRICO — layout v5
+   ===================================================================== */
+
+const auditUi = { query: "", filter: "todos" };
+
+const AUDIT_ICONS = {
+  aprovado: "✓",
+  pendente: "↑",
+  correcao: "↻",
+  rejeitado: "✕",
+  rascunho: "✎",
+  nao_enviado: "◌"
+};
+
+function auditTone(status) {
+  return statusMeta[status]?.[1] || "info";
+}
+
+function splitAuditDate(value) {
+  const parts = String(value || "").split(/,?\s+/).filter(Boolean);
+  return { day: parts[0] || "—", time: parts[1] || "" };
+}
+
+function auditFiltered() {
+  const q = auditUi.query.trim().toLowerCase();
+  return state.historyLog.filter(h => {
+    const okFilter = auditUi.filter === "todos"
+      || (auditUi.filter === "info" ? !statusMeta[h.status] : h.status === auditUi.filter);
+    const okQuery = !q
+      || String(h.user || "").toLowerCase().includes(q)
+      || String(h.action || "").toLowerCase().includes(q)
+      || String(h.unit || "").toLowerCase().includes(q)
+      || String(h.competence || "").toLowerCase().includes(q);
+    return okFilter && okQuery;
+  });
 }
 
 function historyView() {
-  const title = state.role === "admin" ? "Auditoria do sistema" : "Histórico de fechamentos";
-  const desc = state.role === "admin"
-    ? "Registro resumido das ações administrativas e decisões."
-    : "Consulte os fechamentos anteriores e seus respectivos status.";
+  const isAdmin = state.role === "admin";
+  const title = isAdmin ? "Auditoria do sistema" : "Histórico de fechamentos";
+  const desc = isAdmin
+    ? "Linha do tempo completa das ações administrativas, envios e decisões registradas no sistema."
+    : "Consulte os fechamentos anteriores, decisões do RH e o andamento de cada competência.";
 
   return `
-    <div class="page-intro">
-      <div><h1>${title}</h1><p>${desc}</p></div>
-      <div class="actions"><button class="btn btn--outline">Exportar CSV</button></div>
+    <div class="head-v5">
+      <div class="head-v5__text">
+        <span class="head-v5__eyebrow">REGISTROS</span>
+        <h1>${title}</h1>
+        <p>${desc}</p>
+      </div>
+      <div class="head-v5__actions">
+        <button class="btn btn--outline" id="auditExportBtn">↓ Exportar CSV</button>
+      </div>
     </div>
 
-    <div class="card">
-      <div class="table-wrap">
+    ${auditStats()}
+
+    <section class="panel-v5">
+      <div class="panel-v5__toolbar">
+        <div class="search-v5">
+          <span aria-hidden="true">⌕</span>
+          <input id="auditSearch" type="search" placeholder="Buscar por usuário, ação, unidade ou competência..." value="${escapeHtml(auditUi.query)}" />
+        </div>
+        <span class="panel-v5__count" id="auditCount">${auditFiltered().length} evento(s)</span>
+      </div>
+
+      <div class="chips-v5" id="auditChips">${auditChips()}</div>
+
+      <div id="auditResult">${auditResult()}</div>
+    </section>
+  `;
+}
+
+function auditStats() {
+  const all = state.historyLog;
+  const by = s => all.filter(h => h.status === s).length;
+  const units = new Set(all.map(h => h.unit).filter(u => u && u !== "—"));
+
+  const cards = [
+    ["Eventos registrados", all.length, "no período disponível", "primary", "↺"],
+    ["Aprovações", by("aprovado"), "decisões favoráveis do RH", "success", "✓"],
+    ["Correções e rejeições", by("correcao") + by("rejeitado"), "retornaram para a unidade", "danger", "↻"],
+    ["Unidades envolvidas", units.size, "com movimentação registrada", "warning", "▦"]
+  ];
+
+  return `
+    <div class="stats-v5">
+      ${cards.map(([label, value, hint, tone, icon]) => `
+        <article class="stat-v5 stat-v5--${tone}">
+          <div class="stat-v5__icon" aria-hidden="true">${icon}</div>
+          <div class="stat-v5__body">
+            <span>${label}</span>
+            <strong>${value}</strong>
+            <small>${hint}</small>
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function auditChips() {
+  const items = [
+    ["todos", "Todos"],
+    ["pendente", "Envios"],
+    ["aprovado", "Aprovações"],
+    ["correcao", "Correções"],
+    ["rejeitado", "Rejeições"],
+    ["info", "Administrativo"]
+  ];
+
+  return items.map(([key, label]) => {
+    const total = key === "todos"
+      ? state.historyLog.length
+      : key === "info"
+        ? state.historyLog.filter(h => !statusMeta[h.status]).length
+        : state.historyLog.filter(h => h.status === key).length;
+
+    return `
+      <button type="button" class="chip-v5 ${auditUi.filter === key ? "is-active" : ""}" data-audit-filter="${key}">
+        ${label}<i>${total}</i>
+      </button>
+    `;
+  }).join("");
+}
+
+function auditResult() {
+  const list = auditFiltered();
+
+  if (!list.length) {
+    return `
+      <div class="empty-v5">
+        <div class="empty-v5__mark" aria-hidden="true">↺</div>
+        <strong>Nenhum registro encontrado</strong>
+        <p>Altere o filtro ou refine a busca para visualizar os eventos.</p>
+      </div>
+    `;
+  }
+
+  const groups = [];
+  list.forEach(h => {
+    const { day, time } = splitAuditDate(h.date);
+    let group = groups.find(g => g.day === day);
+    if (!group) {
+      group = { day, items: [] };
+      groups.push(group);
+    }
+    group.items.push({ ...h, time });
+  });
+
+  return `
+    <div class="audit-v5">
+      ${groups.map(g => `
+        <section class="audit-v5__group">
+          <header class="audit-v5__day">
+            <strong>${escapeHtml(g.day)}</strong>
+            <span>${g.items.length} evento(s)</span>
+          </header>
+
+          <ol class="audit-v5__list">
+            ${g.items.map(h => {
+              const tone = auditTone(h.status);
+              const icon = AUDIT_ICONS[h.status] || "•";
+              return `
+                <li class="audit-v5__item audit-v5__item--${tone}">
+                  <div class="audit-v5__time">${escapeHtml(h.time || "--:--")}</div>
+                  <div class="audit-v5__dot" aria-hidden="true">${icon}</div>
+                  <div class="audit-v5__body">
+                    <div class="audit-v5__line">
+                      <strong>${escapeHtml(h.action)}</strong>
+                      ${statusMeta[h.status] ? badge(h.status) : `<span class="badge badge--info">Registrado</span>`}
+                    </div>
+                    <div class="audit-v5__tags">
+                      <span class="tag-v5"><i aria-hidden="true">○</i>${escapeHtml(h.user)}</span>
+                      <span class="tag-v5"><i aria-hidden="true">▦</i>${escapeHtml(h.unit)}</span>
+                      <span class="tag-v5"><i aria-hidden="true">▤</i>${escapeHtml(h.competence)}</span>
+                    </div>
+                  </div>
+                </li>
+              `;
+            }).join("")}
+          </ol>
+        </section>
+      `).join("")}
+    </div>
+  `;
+}
+
+function refreshAuditResult() {
+  const box = $("#auditResult");
+  if (box) box.innerHTML = auditResult();
+  const count = $("#auditCount");
+  if (count) count.textContent = `${auditFiltered().length} evento(s)`;
+  const chips = $("#auditChips");
+  if (chips) chips.innerHTML = auditChips();
+  bindAuditChips();
+}
+
+function bindAuditChips() {
+  $$("[data-audit-filter]").forEach(btn => btn.addEventListener("click", () => {
+    auditUi.filter = btn.dataset.auditFilter;
+    refreshAuditResult();
+  }));
+}
+
+function bindHistoryPage() {
+  bindAuditChips();
+
+  $("#auditSearch")?.addEventListener("input", (e) => {
+    auditUi.query = e.target.value;
+    const box = $("#auditResult");
+    if (box) box.innerHTML = auditResult();
+    const count = $("#auditCount");
+    if (count) count.textContent = `${auditFiltered().length} evento(s)`;
+  });
+
+  $("#auditExportBtn")?.addEventListener("click", () => {
+    const rows = [["Data", "Usuario", "Acao", "Unidade", "Competencia", "Resultado"]];
+    auditFiltered().forEach(h => rows.push([
+      h.date, h.user, h.action, h.unit, h.competence,
+      statusMeta[h.status]?.[0] || "Registrado"
+    ]));
+    downloadCsv("auditoria.csv", rows);
+  });
+}
+
+/* =====================================================================
+   USUÁRIOS E HIERARQUIA — layout v5
+   ===================================================================== */
+
+const usersUi = { query: "", perfil: "todos", mode: "grid" };
+
+function usersScope() {
+  return state.role === "rh"
+    ? state.users.filter(u => u.perfilRaw === "coordinator")
+    : state.users;
+}
+
+function usersFiltered() {
+  const q = usersUi.query.trim().toLowerCase();
+  return usersScope().filter(u => {
+    const okPerfil = usersUi.perfil === "todos" || u.perfilRaw === usersUi.perfil;
+    const okQuery = !q
+      || String(u.nome || "").toLowerCase().includes(q)
+      || String(u.email || "").toLowerCase().includes(q)
+      || String(u.unidade || "").toLowerCase().includes(q);
+    return okPerfil && okQuery;
+  });
+}
+
+function usersView() {
+  const isAdmin = state.role === "admin";
+  const title = state.role === "rh" ? "Coordenadores" : "Usuários e hierarquia";
+  const description = state.role === "rh"
+    ? "Gerencie vínculos de coordenadores e remova acessos quando necessário."
+    : "Cadastre usuários, defina perfis de acesso e vincule coordenadores às respectivas unidades.";
+
+  return `
+    <div class="head-v5">
+      <div class="head-v5__text">
+        <span class="head-v5__eyebrow">ADMINISTRAÇÃO</span>
+        <h1>${title}</h1>
+        <p>${description}</p>
+      </div>
+      <div class="head-v5__actions">
+        <button class="btn btn--outline" id="usersExportBtn">↓ Exportar CSV</button>
+        ${isAdmin ? `<button class="btn btn--primary" id="newUserBtn">+ Novo usuário</button>` : ""}
+      </div>
+    </div>
+
+    ${usersStats()}
+
+    ${isAdmin ? `
+      <div class="levels-v5">
+        <article class="level-v5 level-v5--1">
+          <span class="role-chip">NÍVEL 1</span>
+          <strong>Administrador</strong>
+          <p>Gerencia estrutura, unidades, perfis e permissões do sistema.</p>
+        </article>
+        <article class="level-v5 level-v5--2">
+          <span class="role-chip">NÍVEL 2</span>
+          <strong>RH</strong>
+          <p>Visualiza todas as unidades, analisa e decide as aprovações.</p>
+        </article>
+        <article class="level-v5 level-v5--3">
+          <span class="role-chip">NÍVEL 3</span>
+          <strong>Coordenador</strong>
+          <p>Acessa somente a unidade vinculada e envia o fechamento.</p>
+        </article>
+      </div>
+    ` : ""}
+
+    <section class="panel-v5">
+      <div class="panel-v5__toolbar">
+        <div class="search-v5">
+          <span aria-hidden="true">⌕</span>
+          <input id="userSearch" type="search" placeholder="Buscar por nome, e-mail ou unidade..." value="${escapeHtml(usersUi.query)}" />
+        </div>
+
+        <div class="viewtoggle-v5" role="group" aria-label="Modo de exibição">
+          <button type="button" data-users-mode="grid" class="${usersUi.mode === "grid" ? "is-active" : ""}">▦ Cards</button>
+          <button type="button" data-users-mode="table" class="${usersUi.mode === "table" ? "is-active" : ""}">☰ Tabela</button>
+        </div>
+      </div>
+
+      <div class="chips-v5" id="userChips">${usersChips()}</div>
+
+      <div id="usersResult">${usersResult()}</div>
+    </section>
+  `;
+}
+
+function usersStats() {
+  const all = usersScope();
+  const by = p => all.filter(u => u.perfilRaw === p).length;
+  const coords = all.filter(u => u.perfilRaw === "coordinator");
+  const semVinculo = coords.filter(u => !u.unit_id).length;
+
+  const cards = [
+    ["Usuários", all.length, `${all.filter(u => u.status === "Ativo").length} ativo(s)`, "primary", "○"],
+    ["Coordenadores", coords.length, `${coords.length - semVinculo} com unidade vinculada`, "success", "▦"],
+    ["Sem vínculo", semVinculo, "aguardando vinculação de unidade", "warning", "!"],
+    ["RH e Administração", by("rh") + by("admin"), "acessos com escopo global", "info", "⌘"]
+  ];
+
+  return `
+    <div class="stats-v5">
+      ${cards.map(([label, value, hint, tone, icon]) => `
+        <article class="stat-v5 stat-v5--${tone}">
+          <div class="stat-v5__icon" aria-hidden="true">${icon}</div>
+          <div class="stat-v5__body">
+            <span>${label}</span>
+            <strong>${value}</strong>
+            <small>${hint}</small>
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function usersChips() {
+  const items = state.role === "rh"
+    ? [["todos", "Todos"], ["coordinator", "Coordenadores"]]
+    : [["todos", "Todos"], ["admin", "Administradores"], ["rh", "RH"], ["coordinator", "Coordenadores"]];
+
+  return items.map(([key, label]) => {
+    const total = key === "todos"
+      ? usersScope().length
+      : usersScope().filter(u => u.perfilRaw === key).length;
+
+    return `
+      <button type="button" class="chip-v5 ${usersUi.perfil === key ? "is-active" : ""}" data-user-perfil="${key}">
+        ${label}<i>${total}</i>
+      </button>
+    `;
+  }).join("");
+}
+
+function userActions(u) {
+  return `
+    ${state.role === "admin" ? `<button class="table-action" data-v5 data-edit-user-id="${u.id}">Editar</button>` : ""}
+    ${u.perfilRaw === "coordinator" && u.unit_id
+      ? `<button class="table-action" data-v5 data-unlink-user="${u.id}">Desvincular</button>`
+      : ""}
+    ${u.perfilRaw === "coordinator" && !u.unit_id && u.status === "Ativo"
+      ? `<button class="table-action" data-v5 data-link-user="${u.id}">Vincular</button>`
+      : ""}
+    ${u.id !== state.user?.id
+      ? `<button class="table-action table-action--danger" data-v5 data-delete-user="${u.id}">Excluir</button>`
+      : `<span class="unit-v5__hint">Seu acesso</span>`}
+  `;
+}
+
+function usersResult() {
+  const list = usersFiltered();
+
+  if (!list.length) {
+    return `
+      <div class="empty-v5">
+        <div class="empty-v5__mark" aria-hidden="true">○</div>
+        <strong>Nenhum usuário encontrado</strong>
+        <p>Ajuste a busca ou selecione outro perfil de acesso.</p>
+      </div>
+    `;
+  }
+
+  if (usersUi.mode === "table") {
+    return `
+      <div class="table-wrap table-wrap--v5">
         <table>
           <thead>
-            <tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Unidade</th><th>Competência</th><th>Resultado</th></tr>
+            <tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Unidade / Escopo</th><th>Status</th><th>Ações</th></tr>
           </thead>
           <tbody>
-            ${state.historyLog.map(h => `
+            ${list.map(u => `
               <tr>
-                <td>${h.date}</td><td>${escapeHtml(h.user)}</td><td>${escapeHtml(h.action)}</td>
-                <td>${escapeHtml(h.unit)}</td><td>${escapeHtml(h.competence)}</td>
-                <td>${statusMeta[h.status] ? badge(h.status) : `<span class="badge badge--info">Registrado</span>`}</td>
+                <td>
+                  <div class="cell-unit-v5">
+                    <span class="user-v5__avatar user-v5__avatar--sm" aria-hidden="true">${initials(u.nome)}</span>
+                    <div><strong>${escapeHtml(u.nome)}</strong></div>
+                  </div>
+                </td>
+                <td>${escapeHtml(u.email)}</td>
+                <td><span class="role-chip">${escapeHtml(u.perfil)}</span></td>
+                <td>${escapeHtml(u.unidade)}</td>
+                <td><span class="badge ${u.status === "Ativo" ? "badge--success" : "badge--danger"}">${escapeHtml(u.status)}</span></td>
+                <td><div class="actions">${userActions(u)}</div></td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
+    `;
+  }
+
+  return `
+    <div class="user-grid-v5">
+      ${list.map(u => `
+        <article class="user-v5 user-v5--${u.perfilRaw}">
+          <header class="user-v5__head">
+            <div class="user-v5__avatar" aria-hidden="true">${initials(u.nome)}</div>
+            <div class="user-v5__id">
+              <strong>${escapeHtml(u.nome)}</strong>
+              <span>${escapeHtml(u.email)}</span>
+            </div>
+            <span class="badge ${u.status === "Ativo" ? "badge--success" : "badge--danger"}">${escapeHtml(u.status)}</span>
+          </header>
+
+          <div class="user-v5__meta">
+            <span class="role-chip">${escapeHtml(u.perfil)}</span>
+            <span class="tag-v5"><i aria-hidden="true">▦</i>${escapeHtml(u.unidade)}</span>
+          </div>
+
+          <footer class="user-v5__foot">${userActions(u)}</footer>
+        </article>
+      `).join("")}
     </div>
   `;
 }
 
+function refreshUsersResult() {
+  const box = $("#usersResult");
+  if (box) box.innerHTML = usersResult();
+  const chips = $("#userChips");
+  if (chips) chips.innerHTML = usersChips();
+  bindUserChips();
+}
+
+function bindUserChips() {
+  $$("[data-user-perfil]").forEach(btn => btn.addEventListener("click", () => {
+    usersUi.perfil = btn.dataset.userPerfil;
+    refreshUsersResult();
+  }));
+}
+
+function bindUsersPage() {
+  bindUserChips();
+
+  $("#userSearch")?.addEventListener("input", (e) => {
+    usersUi.query = e.target.value;
+    const box = $("#usersResult");
+    if (box) box.innerHTML = usersResult();
+  });
+
+  $$("[data-users-mode]").forEach(btn => btn.addEventListener("click", () => {
+    usersUi.mode = btn.dataset.usersMode;
+    $$("[data-users-mode]").forEach(b => b.classList.toggle("is-active", b === btn));
+    const box = $("#usersResult");
+    if (box) box.innerHTML = usersResult();
+  }));
+
+  $("#usersExportBtn")?.addEventListener("click", () => {
+    const rows = [["Nome", "E-mail", "Perfil", "Unidade/Escopo", "Status"]];
+    usersFiltered().forEach(u => rows.push([u.nome, u.email, u.perfil, u.unidade, u.status]));
+    downloadCsv("usuarios.csv", rows);
+  });
+
+  $("#usersResult")?.addEventListener("click", (e) => {
+    const edit = e.target.closest("[data-edit-user-id]");
+    if (edit) return openEditUserModal(Number(edit.dataset.editUserId));
+
+    const link = e.target.closest("[data-link-user]");
+    if (link) return openLinkUserModal(Number(link.dataset.linkUser));
+
+    const unlink = e.target.closest("[data-unlink-user]");
+    if (unlink) return unlinkUserById(Number(unlink.dataset.unlinkUser));
+
+    const del = e.target.closest("[data-delete-user]");
+    if (del) return deleteUserById(Number(del.dataset.deleteUser));
+  });
+}
+
+async function deleteUserById(userId) {
+  const user = state.users.find(u => u.id === userId);
+  if (!user) return;
+
+  if (!window.confirm(`Excluir o acesso de ${user.nome}? O histórico será preservado.`)) return;
+
+  try {
+    await api(`/usuarios/${userId}`, { method: "DELETE" });
+    toast("Usuário excluído do acesso ao sistema.", "success");
+    await carregarDados();
+    navigate("users");
+  } catch (e) {
+    toast(e.message || "Erro ao excluir usuário.", "error");
+  }
+}
+
+async function unlinkUserById(userId) {
+  const user = state.users.find(u => u.id === userId);
+  if (!user) return;
+
+  if (!window.confirm(`Desvincular ${user.nome} da unidade atual?`)) return;
+
+  try {
+    await api(`/usuarios/${userId}/desvincular-unidade`, { method: "PATCH" });
+    toast("Coordenador desvinculado.", "success");
+    await carregarDados();
+    navigate("users");
+  } catch (e) {
+    toast(e.message || "Erro ao desvincular coordenador.", "error");
+  }
+}
+
 function profileView() {
+  const isCoordinator = state.role === "coordinator";
+  const unit = isCoordinator ? myUnit() : null;
+
+  const roleLabel = state.user?.short || state.user?.name || "Usuário";
+  const scopeLabel = isCoordinator ? "Unidade vinculada" : "Escopo de acesso";
+  const scopeValue = isCoordinator
+    ? (unit?.name || "Nenhuma unidade vinculada")
+    : "Todas as unidades";
+
   return `
-    <div class="page-intro">
-      <div><h1>Meu perfil</h1><p>Informações de acesso ao sistema.</p></div>
-    </div>
-    <div class="grid grid--2">
-      <div class="card card-pad">
-        <div style="display:flex;gap:14px;align-items:center;margin-bottom:18px">
-          <div class="avatar" style="width:52px;height:52px">${state.user.initials}</div>
-          <div>
-            <strong>${state.user.user}</strong>
-            <div class="muted" style="font-size:11px;margin-top:4px">${state.user.name}</div>
+    <div class="profile-v4">
+      <div class="profile-v4__heading">
+        <span class="profile-v4__eyebrow">CONTA</span>
+        <h1>Meu perfil</h1>
+        <p>Gerencie sua foto, seus dados de acesso e a segurança da sua conta.</p>
+      </div>
+
+      <section class="card profile-v4__shell">
+        <aside class="profile-v4__aside">
+          <div class="profile-v4__aside-inner">
+            <div class="profile-v4__avatar-wrap">
+              <div class="avatar profile-v4__avatar" id="profileAvatarLarge">
+                ${state.user.initials}
+              </div>
+
+              <button
+                class="profile-v4__avatar-edit"
+                id="changeProfilePhotoBtn"
+                type="button"
+                title="Alterar foto"
+                aria-label="Alterar foto de perfil"
+              >✎</button>
+            </div>
+
+            <div class="profile-v4__aside-name">
+              <strong>${escapeHtml(state.user.user)}</strong>
+              <span>${escapeHtml(roleLabel)}</span>
+            </div>
+
+            <div class="profile-v4__photo-actions">
+              <button class="btn btn--primary" id="changeProfilePhotoBtnSecondary" type="button">
+                Alterar foto
+              </button>
+              <button class="btn btn--outline" id="removeProfilePhotoBtn" type="button">
+                Remover foto
+              </button>
+            </div>
+
+            <div class="profile-v4__aside-meta">
+              <p>${escapeHtml(state.user.email || "—")}</p>
+              <span class="profile-v4__status">
+                <span class="profile-v4__status-dot"></span>
+                Conta ativa
+              </span>
+            </div>
+          </div>
+        </aside>
+
+        <div class="profile-v4__content">
+          <div class="profile-v4__cards">
+            <section class="profile-v4__panel profile-v4__panel--info">
+              <div class="profile-v4__panel-header">
+                <span class="profile-v4__eyebrow">INFORMAÇÕES</span>
+                <h3>Dados da conta</h3>
+              </div>
+
+              <div class="profile-v4__info-box">
+                <div class="profile-v4__info-row">
+                  <span>Nome completo</span>
+                  <strong>${escapeHtml(state.user.user)}</strong>
+                </div>
+
+                <div class="profile-v4__info-row">
+                  <span>E-mail</span>
+                  <strong>${escapeHtml(state.user.email || "—")}</strong>
+                </div>
+
+                <div class="profile-v4__info-row">
+                  <span>Perfil de acesso</span>
+                  <strong>${escapeHtml(roleLabel)}</strong>
+                </div>
+
+                <div class="profile-v4__info-row">
+                  <span>${scopeLabel}</span>
+                  <strong class="${isCoordinator && !unit ? "text-warning" : ""}">
+                    ${escapeHtml(scopeValue)}
+                  </strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="profile-v4__panel profile-v4__panel--security">
+              <div class="profile-v4__panel-header">
+                <span class="profile-v4__eyebrow">SEGURANÇA</span>
+                <h3>Redefinir senha</h3>
+              </div>
+
+              <form id="profilePasswordForm" class="profile-v4__password-form">
+                <label class="profile-v4__field">
+                  <span>Senha atual</span>
+                  <input
+                    type="password"
+                    id="profileCurrentPassword"
+                    placeholder="Digite sua senha atual"
+                    autocomplete="current-password"
+                    required
+                  />
+                </label>
+
+                <label class="profile-v4__field">
+                  <span>Nova senha</span>
+                  <input
+                    type="password"
+                    id="profileNewPassword"
+                    placeholder="Mínimo de 8 caracteres"
+                    autocomplete="new-password"
+                    minlength="8"
+                    required
+                  />
+                </label>
+
+                <label class="profile-v4__field">
+                  <span>Confirmar nova senha</span>
+                  <input
+                    type="password"
+                    id="profileConfirmPassword"
+                    placeholder="Repita a nova senha"
+                    autocomplete="new-password"
+                    minlength="8"
+                    required
+                  />
+                </label>
+
+                <button class="btn btn--primary profile-v4__password-btn" type="submit">
+                  Alterar senha
+                </button>
+              </form>
+            </section>
           </div>
         </div>
-        <div class="kv">
-          <span>Perfil</span><strong>${state.user.short}</strong>
-          <span>Status</span><strong>Ativo</strong>
-          <span>Unidade / Escopo</span><strong>${state.role === "coordinator" ? myUnit().name : "Secretaria Municipal de Saúde"}</strong>
-        </div>
-      </div>
-      <div class="card card-pad security-panel">
-        <div class="security-panel__icon">⌁</div>
-        <div>
-          <span class="eyebrow">SEGURANÇA</span>
-          <h3>Senha de acesso</h3>
-          <p class="muted">Atualize sua senha sempre que necessário.</p>
-        </div>
-        <button class="btn btn--primary" id="changeMyPasswordBtn">Alterar senha</button>
-      </div>
+      </section>
     </div>
   `;
 }
@@ -1638,9 +2616,12 @@ function profileView() {
 function bindCurrentPage() {
   $$("[data-go]").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.go)));
 
-  $$("[data-review]").forEach(btn => btn.addEventListener("click", () => navigate("review", { unitId: btn.dataset.review })));
+  $$("[data-review]:not([data-v5])").forEach(btn => btn.addEventListener("click", () => navigate("review", { unitId: btn.dataset.review })));
 
   if (state.currentPage === "point") bindPointPage();
+  if (state.currentPage === "units") bindUnitsPage();
+  if (state.currentPage === "history") bindHistoryPage();
+  if (state.currentPage === "users") bindUsersPage();
 
   const reloadRhDashboard = async () => {
     if (state.role !== "rh") return;
@@ -1717,10 +2698,99 @@ function bindCurrentPage() {
     await abrirDocumento(Number(documentId));
   });
 
+
+  $("#requestEditBtn")?.addEventListener("click", () => {
+    const unit = myUnit();
+    if (!unit?.fechamentoId) {
+      toast("Fechamento não encontrado.", "error");
+      return;
+    }
+    openEditRequestModal(unit);
+  });
+
+  $$("[data-edit-request-decision]").forEach(btn => btn.addEventListener("click", () => {
+    openEditRequestDecisionModal(
+      Number(btn.dataset.requestId),
+      btn.dataset.editRequestDecision
+    );
+  }));
+
+  $$("[data-delete-user]:not([data-v5])").forEach(btn => btn.addEventListener("click", () => {
+    deleteUserById(Number(btn.dataset.deleteUser));
+  }));
+
+  $$("[data-unlink-user]:not([data-v5])").forEach(btn => btn.addEventListener("click", () => {
+    unlinkUserById(Number(btn.dataset.unlinkUser));
+  }));
+
+  $$("[data-link-user]:not([data-v5])").forEach(btn => btn.addEventListener("click", () => {
+    openLinkUserModal(Number(btn.dataset.linkUser));
+  }));
+
+  $$("[data-delete-unit]:not([data-v5])").forEach(btn => btn.addEventListener("click", () => {
+    deleteUnitById(Number(btn.dataset.deleteUnit));
+  }));
+
   $("#newUserBtn")?.addEventListener("click", openNewUserModal);
   $("#newUnitBtn")?.addEventListener("click", openNewUnitModal);
-  $("#changeMyPasswordBtn")?.addEventListener("click", openChangeMyPasswordModal);
-  $$("[data-edit-user]").forEach(btn => btn.addEventListener("click", () => openEditUserModal(Number(btn.dataset.editUser))));
+  $("#profilePasswordForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const current_password = $("#profileCurrentPassword")?.value || "";
+    const new_password = $("#profileNewPassword")?.value || "";
+    const confirm_password = $("#profileConfirmPassword")?.value || "";
+
+    if (!current_password) {
+      toast("Informe sua senha atual.", "error");
+      return;
+    }
+
+    if (new_password.length < 8) {
+      toast("A nova senha deve ter no mínimo 8 caracteres.", "error");
+      return;
+    }
+
+    if (new_password !== confirm_password) {
+      toast("A confirmação da nova senha não confere.", "error");
+      return;
+    }
+
+    try {
+      await api("/usuarios/me/senha", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password,
+          new_password
+        })
+      });
+
+      e.currentTarget.reset();
+      toast("Senha alterada com sucesso.", "success");
+    } catch (error) {
+      toast(error.message || "Não foi possível alterar a senha.", "error");
+    }
+  });
+
+  $("#changeProfilePhotoBtn")?.addEventListener("click", openProfilePhotoModal);
+  $("#changeProfilePhotoBtnSecondary")?.addEventListener("click", openProfilePhotoModal);
+
+  $("#removeProfilePhotoBtn")?.addEventListener("click", async () => {
+    if (!window.confirm("Remover sua foto de perfil?")) return;
+
+    try {
+      await api("/usuarios/me/foto", { method: "DELETE" });
+      await refreshCurrentProfilePhoto();
+      toast("Foto de perfil removida.", "success");
+    } catch (e) {
+      toast(e.message || "Erro ao remover foto.", "error");
+    }
+  });
+
+  if (state.currentPage === "profile") {
+    renderCurrentUserAvatars();
+  }
+  $$("[data-edit-user-id]:not([data-v5])").forEach(btn => btn.addEventListener("click", () => openEditUserModal(Number(btn.dataset.editUserId))));
 }
 
 
@@ -1813,6 +2883,279 @@ async function abrirDocumento(documentId) {
   }
 }
 
+
+function openEditRequestModal(unit) {
+  openModal({
+    title: "Solicitar edição do fechamento",
+    content: `
+      <div class="notice notice--warning">
+        O fechamento continuará bloqueado até que o RH autorize a alteração.
+      </div>
+      <label class="field" style="margin-top:14px">
+        <span>Motivo da solicitação</span>
+        <textarea id="editRequestReason" maxlength="1000" placeholder="Explique o que precisa ser corrigido."></textarea>
+      </label>
+    `,
+    actions: `
+      <button class="btn btn--outline" data-cancel>Cancelar</button>
+      <button class="btn btn--primary" id="sendEditRequestBtn">Enviar solicitação</button>
+    `
+  });
+
+  $("[data-cancel]")?.addEventListener("click", closeModal);
+
+  $("#sendEditRequestBtn")?.addEventListener("click", async () => {
+    const reason = $("#editRequestReason").value.trim();
+
+    if (reason.length < 5) {
+      toast("Informe o motivo da solicitação.", "error");
+      return;
+    }
+
+    try {
+      await api(`/fechamentos/${unit.fechamentoId}/solicitar-edicao`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason })
+      });
+
+      closeModal();
+      toast("Solicitação enviada ao RH.", "success");
+      await carregarDados();
+      navigate("point");
+    } catch (e) {
+      toast(e.message || "Erro ao enviar solicitação.", "error");
+    }
+  });
+}
+
+
+function openEditRequestDecisionModal(requestId, decision) {
+  const approved = decision === "approved";
+
+  openModal({
+    title: approved ? "Autorizar edição" : "Negar solicitação",
+    content: `
+      <div class="notice ${approved ? "notice--info" : "notice--warning"}">
+        ${approved
+          ? "Ao autorizar, o fechamento será liberado para correção pelo coordenador."
+          : "O fechamento permanecerá bloqueado para o coordenador."}
+      </div>
+      <label class="field" style="margin-top:14px">
+        <span>Observação ${approved ? "(opcional)" : "(opcional)"}</span>
+        <textarea id="editDecisionNote" maxlength="1000" placeholder="Registre uma observação, se necessário."></textarea>
+      </label>
+    `,
+    actions: `
+      <button class="btn btn--outline" data-cancel>Cancelar</button>
+      <button class="btn ${approved ? "btn--success" : "btn--danger"}" id="confirmEditRequestDecision">
+        ${approved ? "Autorizar edição" : "Negar solicitação"}
+      </button>
+    `
+  });
+
+  $("[data-cancel]")?.addEventListener("click", closeModal);
+
+  $("#confirmEditRequestDecision")?.addEventListener("click", async () => {
+    try {
+      await api(`/solicitacoes-edicao/${requestId}/decisao`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          note: $("#editDecisionNote").value.trim() || null
+        })
+      });
+
+      closeModal();
+      toast(
+        approved ? "Edição autorizada." : "Solicitação negada.",
+        "success"
+      );
+      await carregarDados();
+      navigate("approvals");
+    } catch (e) {
+      toast(e.message || "Erro ao decidir solicitação.", "error");
+    }
+  });
+}
+
+
+function openLinkUserModal(userId) {
+  const user = state.users.find(u => u.id === Number(userId));
+  if (!user) return;
+
+  openModal({
+    title: "Vincular coordenador",
+    content: `
+      <div class="edit-user-head">
+        <div class="avatar">${initials(user.nome)}</div>
+        <div>
+          <strong>${escapeHtml(user.nome)}</strong>
+          <span>Selecione a unidade de saúde</span>
+        </div>
+      </div>
+      <label class="field">
+        <span>Unidade</span>
+        <select id="linkUserUnit">
+          <option value="">Selecione...</option>
+          ${state.units.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join("")}
+        </select>
+      </label>
+    `,
+    actions: `
+      <button class="btn btn--outline" data-cancel>Cancelar</button>
+      <button class="btn btn--primary" id="confirmLinkUser">Vincular</button>
+    `
+  });
+
+  $("[data-cancel]")?.addEventListener("click", closeModal);
+
+  $("#confirmLinkUser")?.addEventListener("click", async () => {
+    const unit_id = Number($("#linkUserUnit").value);
+
+    if (!unit_id) {
+      toast("Selecione uma unidade.", "error");
+      return;
+    }
+
+    try {
+      await api(`/usuarios/${userId}/vincular-unidade`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unit_id })
+      });
+
+      closeModal();
+      toast("Coordenador vinculado à unidade.", "success");
+      await carregarDados();
+      navigate("users");
+    } catch (e) {
+      toast(e.message || "Erro ao vincular coordenador.", "error");
+    }
+  });
+}
+
+
+
+function openProfilePhotoModal() {
+  let selectedFile = null;
+  let previewUrl = null;
+
+  openModal({
+    title: "Alterar foto de perfil",
+    content: `
+      <div class="profile-photo-modal">
+        <div class="profile-photo-preview" id="profilePhotoPreview">
+          ${currentProfilePhotoUrl
+            ? `<img src="${currentProfilePhotoUrl}" alt="Foto atual">`
+            : `<span>${state.user.initials}</span>`}
+        </div>
+
+        <div class="profile-photo-modal__copy">
+          <strong>Escolha uma nova foto</strong>
+          <p>JPG, PNG ou WEBP. Tamanho máximo de 2 MB.</p>
+        </div>
+
+        <label class="btn btn--outline profile-file-button">
+          Selecionar imagem
+          <input
+            type="file"
+            id="profilePhotoInput"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+          >
+        </label>
+
+        <div class="profile-selected-file" id="profileSelectedFile">
+          Nenhuma imagem selecionada.
+        </div>
+      </div>
+    `,
+    actions: `
+      <button class="btn btn--outline" data-cancel>Cancelar</button>
+      <button class="btn btn--primary" id="saveProfilePhotoBtn" disabled>Salvar foto</button>
+    `
+  });
+
+  const cleanup = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+    }
+  };
+
+  $("[data-cancel]")?.addEventListener("click", () => {
+    cleanup();
+    closeModal();
+  });
+
+  $("#profilePhotoInput")?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowed.includes(file.type)) {
+      toast("Use uma imagem JPG, PNG ou WEBP.", "error");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast("A foto deve ter no máximo 2 MB.", "error");
+      event.target.value = "";
+      return;
+    }
+
+    selectedFile = file;
+
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+
+    $("#profilePhotoPreview").innerHTML =
+      `<img src="${previewUrl}" alt="Prévia da nova foto">`;
+
+    $("#profileSelectedFile").textContent =
+      `${file.name} • ${(file.size / 1024).toFixed(0)} KB`;
+
+    $("#saveProfilePhotoBtn").disabled = false;
+  });
+
+  $("#saveProfilePhotoBtn")?.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    const button = $("#saveProfilePhotoBtn");
+    button.disabled = true;
+    button.textContent = "Salvando...";
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      await api("/usuarios/me/foto", {
+        method: "POST",
+        body: formData
+      });
+
+      cleanup();
+      closeModal();
+
+      await refreshCurrentProfilePhoto();
+      renderCurrentUserAvatars();
+
+      toast("Foto de perfil atualizada.", "success");
+
+    } catch (e) {
+      button.disabled = false;
+      button.textContent = "Salvar foto";
+      toast(e.message || "Erro ao atualizar foto.", "error");
+    }
+  });
+}
+
+
 function openNewUserModal() {
   openModal({
     title: "Novo usuário",
@@ -1884,8 +3227,9 @@ function openNewUserModal() {
   });
 }
 
-function openEditUserModal(index) {
-  const u = state.users[index];
+function openEditUserModal(userId) {
+  const u = state.users.find(user => user.id === Number(userId));
+  if (!u) return;
 
   openModal({
     title: "Editar usuário",

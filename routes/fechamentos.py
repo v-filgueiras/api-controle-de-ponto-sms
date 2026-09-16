@@ -1,13 +1,15 @@
 import os
 import shutil
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
 from database.connect import get_db
 from deps import get_current_user, require_role
-from models import Fechamentos, Documents, PointRows, Units, Users, HistoryLog
+from models import Fechamentos, Documents, EditRequests, PointRows, Units, Users, HistoryLog
 from schemas.fechamentos import DecisionIn, FechamentoOut, FechamentoRowsUpdate, FechamentoSubmit
 
 router = APIRouter(tags=["fechamentos"])
@@ -51,8 +53,8 @@ def _obter_ou_criar_fechamento(db: Session, unit_id: int) -> Fechamentos:
     if fechamento:
         return fechamento
 
-    if not db.query(Units).filter(Units.id == unit_id).first():
-        raise HTTPException(status_code=404, detail="Unidade não encontrada.")
+    if not db.query(Units).filter(Units.id == unit_id, Units.active.is_(True)).first():
+        raise HTTPException(status_code=404, detail="Unidade não encontrada ou inativa.")
 
     fechamento = Fechamentos(unit_id=unit_id, competence=competence, status="rascunho")
     db.add(fechamento)
@@ -234,3 +236,176 @@ def decidir_fechamento(
     db.commit()
     db.refresh(fechamento)
     return fechamento
+class EditRequestCreate(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+class EditRequestDecision(BaseModel):
+    decision: Literal["approved", "rejected"]
+    note: str | None = Field(default=None, max_length=1000)
+
+
+def edit_request_to_dict(req: EditRequests, db: Session):
+    fechamento = (
+        db.query(Fechamentos)
+        .options(joinedload(Fechamentos.unit))
+        .filter(Fechamentos.id == req.fechamento_id)
+        .first()
+    )
+    requester = db.query(Users).filter(Users.id == req.requested_by_id).first()
+    decided_by = (
+        db.query(Users).filter(Users.id == req.decided_by_id).first()
+        if req.decided_by_id
+        else None
+    )
+
+    return {
+        "id": req.id,
+        "fechamento_id": req.fechamento_id,
+        "unit_id": fechamento.unit_id if fechamento else None,
+        "unit_name": fechamento.unit.name if fechamento and fechamento.unit else "—",
+        "competence": fechamento.competence if fechamento else "—",
+        "fechamento_status": fechamento.status if fechamento else None,
+        "requested_by_id": req.requested_by_id,
+        "requested_by_name": requester.name if requester else "Usuário",
+        "reason": req.reason,
+        "status": req.status,
+        "decision_note": req.decision_note,
+        "decided_by_id": req.decided_by_id,
+        "decided_by_name": decided_by.name if decided_by else None,
+        "created_at": req.created_at,
+        "decided_at": req.decided_at,
+    }
+
+
+@router.post("/fechamentos/{fechamento_id}/solicitar-edicao", status_code=201)
+def solicitar_edicao(
+    fechamento_id: int,
+    payload: EditRequestCreate,
+    db: Session = Depends(get_db),
+    user: Users = Depends(require_role("coordinator")),
+):
+    fechamento = db.query(Fechamentos).filter(Fechamentos.id == fechamento_id).first()
+    if not fechamento:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado.")
+
+    if user.unit_id is None or user.unit_id != fechamento.unit_id:
+        raise HTTPException(status_code=403, detail="Você não tem acesso a este fechamento.")
+
+    if fechamento.status not in ("pendente", "aprovado"):
+        raise HTTPException(
+            status_code=409,
+            detail="Só é necessário solicitar edição para fechamentos enviados ou aprovados.",
+        )
+
+    pendente = (
+        db.query(EditRequests)
+        .filter(
+            EditRequests.fechamento_id == fechamento.id,
+            EditRequests.status == "pendente",
+        )
+        .first()
+    )
+    if pendente:
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma solicitação de edição aguardando decisão do RH.",
+        )
+
+    req = EditRequests(
+        fechamento_id=fechamento.id,
+        requested_by_id=user.id,
+        reason=payload.reason.strip(),
+        status="pendente",
+    )
+    db.add(req)
+
+    registrar_historico(db, user, "Solicitou edição do fechamento", fechamento)
+
+    db.commit()
+    db.refresh(req)
+
+    return edit_request_to_dict(req, db)
+
+
+@router.get("/fechamentos/{fechamento_id}/solicitacao-edicao")
+def obter_solicitacao_edicao_do_fechamento(
+    fechamento_id: int,
+    db: Session = Depends(get_db),
+    user: Users = Depends(get_current_user),
+):
+    fechamento = db.query(Fechamentos).filter(Fechamentos.id == fechamento_id).first()
+    if not fechamento:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado.")
+
+    _checar_acesso_unidade(user, fechamento.unit_id)
+
+    req = (
+        db.query(EditRequests)
+        .filter(EditRequests.fechamento_id == fechamento_id)
+        .order_by(EditRequests.created_at.desc())
+        .first()
+    )
+
+    return edit_request_to_dict(req, db) if req else None
+
+
+@router.get("/solicitacoes-edicao")
+def listar_solicitacoes_edicao(
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    _: Users = Depends(require_role("rh")),
+):
+    query = db.query(EditRequests)
+
+    if status:
+        query = query.filter(EditRequests.status == status)
+
+    requests = query.order_by(EditRequests.created_at.desc()).all()
+    return [edit_request_to_dict(req, db) for req in requests]
+
+
+@router.post("/solicitacoes-edicao/{request_id}/decisao")
+def decidir_solicitacao_edicao(
+    request_id: int,
+    payload: EditRequestDecision,
+    db: Session = Depends(get_db),
+    user: Users = Depends(require_role("rh")),
+):
+    req = db.query(EditRequests).filter(EditRequests.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+
+    if req.status != "pendente":
+        raise HTTPException(status_code=409, detail="Esta solicitação já foi decidida.")
+
+    fechamento = db.query(Fechamentos).filter(Fechamentos.id == req.fechamento_id).first()
+    if not fechamento:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado.")
+
+    req.status = "aprovado" if payload.decision == "approved" else "rejeitado"
+    req.decision_note = payload.note.strip() if payload.note else None
+    req.decided_by_id = user.id
+    req.decided_at = datetime.now()
+
+    if payload.decision == "approved":
+        fechamento.status = "correcao"
+        fechamento.rh_note = (
+            req.decision_note
+            or f"Edição autorizada pelo RH. Motivo informado pelo coordenador: {req.reason}"
+        )
+        fechamento.rh_decision_at = datetime.now()
+        fechamento.rh_decision_by_id = user.id
+        registrar_historico(db, user, "Autorizou edição solicitada pelo coordenador", fechamento)
+    else:
+        registrar_historico(db, user, "Negou solicitação de edição do coordenador", fechamento)
+
+    db.commit()
+
+    return {
+        "message": (
+            "Edição autorizada. O fechamento foi liberado para correção."
+            if payload.decision == "approved"
+            else "Solicitação de edição negada."
+        )
+    }

@@ -38,3 +38,4 @@ class Fechamentos(Base):
     submitted_by = relationship("Users", foreign_keys=[submitted_by_id])
     rh_decision_by = relationship("Users", foreign_keys=[rh_decision_by_id])
     rows = relationship("PointRows", back_populates="fechamento", cascade="all, delete-orphan")
+    edit_requests = relationship("EditRequests", back_populates="fechamento", cascade="all, delete-orphan")

@@ -1,7 +1,7 @@
 from database.connect import Base
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, LargeBinary
 from sqlalchemy.orm import relationship
 
 class Users(Base):
@@ -14,6 +14,8 @@ class Users(Base):
     perfil = Column(String(20), nullable=False)  # "admin" | "rh" | "coordinator"
     unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
     status = Column(Boolean, default=True)
+    profile_photo = Column(LargeBinary, nullable=True)
+    profile_photo_mime = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

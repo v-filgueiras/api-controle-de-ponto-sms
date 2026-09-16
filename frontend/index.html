@@ -5,87 +5,82 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Controle de Ponto | Secretaria Municipal de Saúde</title>
   <meta name="description" content="Sistema de controle, fechamento e aprovação de ponto da Secretaria Municipal de Saúde." />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="static/styles.css?v=20260916-v5b" />
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <section id="loginView" class="login-shell">
-    <div class="login-visual">
-      <div class="login-visual__top">
-        <div class="brand brand--official">
-        </div>
-      </div>
-
-      <div class="login-visual__center">
-        <span class="login-visual__kicker">SISTEMA INTERNO</span>
-        <h1>Controle de Ponto</h1>
-        <p>Gestão mensal de registros, documentos e aprovações das unidades de saúde.</p>
-      </div>
-
-      <div class="login-visual__footer">
-        <span>Secretaria Municipal de Saúde</span>
-        <strong>Gestão de Pessoas</strong>
-      </div>
-
-      <div class="login-watermark" aria-hidden="true">SMS</div>
-    </div>
+    <div class="login-visual" aria-hidden="true"></div>
 
     <div class="login-panel">
-      <div class="login-card">
-        <div class="mobile-brand">
-          <img
-            class="brand-logo brand-logo--mobile"
-            src="/static/assets/sms_logo.png"
-            alt="Prefeitura de Três Lagoas - Secretaria Municipal de Saúde"
-          />
+      <div class="login-panel-inner">
+        <div class="login-card">
+          <div class="mobile-brand">
+            <div class="brand-mark">SMS</div>
+            <div>
+              <strong>Secretaria Municipal de Saúde</strong>
+              <span>Controle de Ponto</span>
+            </div>
+          </div>
+
+          <div class="login-heading">
+            <span class="login-system-label">SECRETARIA MUNICIPAL DE SAÚDE</span>
+            <h1>Acesso ao Sistema</h1>
+            <p>Entre com suas credenciais para acessar o Controle de Ponto.</p>
+          </div>
+
+          <form id="loginForm" novalidate>
+            <label class="field login-field">
+              <span>E-mail</span>
+              <div class="input-with-icon">
+                <span class="field-icon" aria-hidden="true">○</span>
+                <input id="loginEmail" type="email" placeholder="Digite seu e-mail" required />
+              </div>
+            </label>
+
+            <label class="field login-field">
+              <span>Senha</span>
+              <div class="password-wrap input-with-icon">
+                <span class="field-icon lock-icon" aria-hidden="true">□</span>
+                <input id="loginPassword" type="password" placeholder="Digite sua senha" required />
+                <button type="button" class="icon-button" id="togglePassword" aria-label="Mostrar senha">◉</button>
+              </div>
+            </label>
+
+            <div class="login-options">
+              <label class="remember-access">
+                <input type="checkbox" id="rememberAccess" />
+                <span>Lembrar meu acesso</span>
+              </label>
+            </div>
+
+            <button class="btn btn--primary btn--block login-submit" type="submit">
+              <span>→</span>
+              ACESSAR SISTEMA
+            </button>
+          </form>
         </div>
 
-        <span class="eyebrow">ACESSO RESTRITO</span>
-        <h2>Entrar no sistema</h2>
-        <p class="muted" style="margin:0 0 22px;line-height:1.55">
-          Use seu e-mail institucional e sua senha para continuar.
-        </p>
-
-        <form id="loginForm" novalidate>
-          <label class="field">
-            <span>E-mail</span>
-            <input id="loginEmail" type="email" placeholder="seuemail@dominio.com" autocomplete="username" required />
-          </label>
-
-          <label class="field">
-            <span>Senha</span>
-            <div class="password-wrap">
-              <input id="loginPassword" type="password" placeholder="Digite sua senha" autocomplete="current-password" required />
-              <button type="button" class="icon-button" id="togglePassword" aria-label="Mostrar senha"></button>
-            </div>
-          </label>
-
-          <button class="btn btn--primary btn--block" type="submit" id="loginSubmitBtn">
-            Entrar
-          </button>
-        </form>
       </div>
     </div>
   </section>
 
   <section id="appView" class="app-shell hidden">
     <aside class="sidebar" id="sidebar">
-      <div class="brand brand--sidebar">
-        <div class="brand-logo-shell brand-logo-shell--sidebar">
-          <img
-            class="brand-logo brand-logo--sidebar"
-            src="/static/assets/sms_logo.png"
-            alt="Prefeitura de Três Lagoas - Secretaria Municipal de Saúde"
-          />
+      <div class="brand">
+        <div class="brand-mark">SMS</div>
+        <div class="brand-text">
+          <strong>Secretaria de Saúde</strong>
+          <span>Controle de Ponto</span>
         </div>
       </div>
 
-      <nav id="mainNav" class="nav" aria-label="Menu principal"></nav>
+      <nav id="mainNav" class="nav"></nav>
 
       <div class="sidebar-footer">
         <div class="user-mini">
-          <div class="avatar" id="sidebarAvatar">--</div>
+          <div class="avatar" id="sidebarAvatar">VF</div>
           <div>
             <strong id="sidebarUser">Usuário</strong>
             <span id="sidebarRole">Perfil</span>
@@ -97,14 +92,14 @@
 
     <main class="main">
       <header class="topbar">
-        <button id="menuBtn" class="menu-btn" aria-label="Abrir menu"></button>
+        <button id="menuBtn" class="menu-btn" aria-label="Abrir menu">☰</button>
         <div>
           <span class="breadcrumb" id="breadcrumb">Início</span>
           <h2 id="pageTitle">Painel</h2>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button notification" id="notificationBtn" title="Notificações" aria-label="Notificações"></button>
-          <div class="avatar" id="topAvatar">--</div>
+          <button class="icon-button notification" title="Notificações">♢<span>3</span></button>
+          <div class="avatar" id="topAvatar">VF</div>
         </div>
       </header>
 
@@ -114,6 +109,6 @@
 
   <div id="modalRoot"></div>
 
-  <script src="/static/app.js"></script>
+  <script src="static/app.js?v=20260916-v5b"></script>
 </body>
 </html>
