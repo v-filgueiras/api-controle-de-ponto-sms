@@ -899,7 +899,6 @@ function adminDashboard() {
     <div class="page-intro">
       <div>
         <h1>Administração do sistema</h1>
-        <p>Gerencie perfis, vínculos entre coordenadores e unidades e a estrutura de acesso.</p>
       </div>
       <div class="actions">
         <button class="btn btn--primary" data-go="users">Gerenciar usuários</button>
@@ -1723,7 +1722,6 @@ function unitsView() {
       <div class="head-v5__text">
         <span class="head-v5__eyebrow">ESTRUTURA</span>
         <h1>Unidades de saúde</h1>
-        <p>Acompanhe coordenadores vinculados, quantidade de servidores e a situação do fechamento de cada unidade.</p>
       </div>
       <div class="head-v5__actions">
         <button class="btn btn--outline" id="unitsExportBtn">↓ Exportar CSV</button>
@@ -2033,8 +2031,8 @@ function historyView() {
   const isAdmin = state.role === "admin";
   const title = isAdmin ? "Auditoria do sistema" : "Histórico de fechamentos";
   const desc = isAdmin
-    ? "Linha do tempo completa das ações administrativas, envios e decisões registradas no sistema."
-    : "Consulte os fechamentos anteriores, decisões do RH e o andamento de cada competência.";
+    ? "Acompanhe todas as ações registradas no sistema."
+    : "Acompanhe o histórico de fechamentos da sua unidade.";
 
   return `
     <div class="head-v5">
@@ -2246,9 +2244,9 @@ function usersFiltered() {
 function usersView() {
   const isAdmin = state.role === "admin";
   const title = state.role === "rh" ? "Coordenadores" : "Usuários e hierarquia";
-  const description = state.role === "rh"
-    ? "Gerencie vínculos de coordenadores e remova acessos quando necessário."
-    : "Cadastre usuários, defina perfis de acesso e vincule coordenadores às respectivas unidades.";
+  const description = isAdmin
+    ? "Gerencie usuários, perfis e a vinculação de coordenadores às unidades."
+    : "Consulte os coordenadores vinculados às unidades de saúde.";
 
   return `
     <div class="head-v5">
@@ -2533,7 +2531,6 @@ function profileView() {
       <div class="profile-v4__heading">
         <span class="profile-v4__eyebrow">CONTA</span>
         <h1>Meu perfil</h1>
-        <p>Gerencie sua foto, seus dados de acesso e a segurança da sua conta.</p>
       </div>
 
       <section class="card profile-v4__shell">
