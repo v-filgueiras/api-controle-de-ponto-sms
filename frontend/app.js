@@ -67,6 +67,14 @@ async function refreshCurrentProfilePhoto() {
   }
 }
 
+function debounce(fn, wait = 180) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
+
 async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = getToken();
@@ -172,57 +180,82 @@ async function carregarDados() {
     fechamentoId: null
   }));
 
+  // A partir daqui, nenhuma chamada depende do resultado das outras —
+  // disparamos todas de uma vez em vez de esperar uma por vez.
+  const tasks = {};
+
   if (state.role === "admin" || state.role === "rh") {
-    try {
-      const usuarios = await api("/usuarios");
-      state.users = usuarios.map(mapUser);
+    tasks.usuarios = api("/usuarios");
+    tasks.aprovacoes = api("/aprovacoes");
+  }
+
+  if (state.role === "rh") {
+    tasks.rhDashboard = api("/dashboard/rh");
+    tasks.editRequests = api("/solicitacoes-edicao?status=pendente");
+  }
+
+  if (state.role === "coordinator" && state.user?.unit_id) {
+    tasks.fechamentoAtual = api(`/unidades/${state.user.unit_id}/fechamento-atual`);
+  }
+
+  // O backend agora pagina /historico (padrão: 300). Pedimos o teto máximo
+  // permitido para manter o comportamento atual (tudo carregado de uma vez);
+  // se o histórico crescer além disso, o próximo passo é paginar na tela.
+  tasks.historico = api("/historico?limit=1000");
+
+  const keys = Object.keys(tasks);
+  const results = await Promise.allSettled(keys.map(k => tasks[k]));
+  const out = {};
+  keys.forEach((k, i) => { out[k] = results[i]; });
+
+  if (out.usuarios) {
+    if (out.usuarios.status === "fulfilled") {
+      state.users = out.usuarios.value.map(mapUser);
       state.units.forEach(unit => {
         const coord = state.users.find(u => u.perfilRaw === "coordinator" && u.unit_id === unit.id);
         if (coord) unit.coordinator = coord.nome;
       });
-    } catch (e) {
-      console.warn("Não foi possível carregar usuários:", e);
+    } else {
+      console.warn("Não foi possível carregar usuários:", out.usuarios.reason);
     }
+  }
 
-    try {
-      const aprovacoes = await api("/aprovacoes");
-      aprovacoes.forEach(f => {
+  if (out.aprovacoes) {
+    if (out.aprovacoes.status === "fulfilled") {
+      out.aprovacoes.value.forEach(f => {
         const unitIndex = state.units.findIndex(u => u.id === f.unit_id);
         if (unitIndex >= 0) {
           state.units[unitIndex] = mapFechamento(f, state.units[unitIndex]);
         }
       });
-    } catch (e) {
-      console.warn("Não foi possível carregar aprovações:", e);
+    } else {
+      console.warn("Não foi possível carregar aprovações:", out.aprovacoes.reason);
     }
   }
 
-  if (state.role === "rh") {
-    try {
-      state.rhDashboard = await api("/dashboard/rh");
-    } catch (e) {
-      console.warn("Não foi possível carregar o dashboard do RH:", e);
-      state.rhDashboard = null;
-    }
-
-    try {
-      state.editRequests = await api("/solicitacoes-edicao?status=pendente");
-    } catch (e) {
-      console.warn("Não foi possível carregar solicitações de edição:", e);
-      state.editRequests = [];
+  if (out.rhDashboard) {
+    state.rhDashboard = out.rhDashboard.status === "fulfilled" ? out.rhDashboard.value : null;
+    if (out.rhDashboard.status === "rejected") {
+      console.warn("Não foi possível carregar o dashboard do RH:", out.rhDashboard.reason);
     }
   }
 
-  if (state.role === "coordinator" && state.user?.unit_id) {
-    const f = await api(`/unidades/${state.user.unit_id}/fechamento-atual`);
+  if (out.editRequests) {
+    state.editRequests = out.editRequests.status === "fulfilled" ? out.editRequests.value : [];
+    if (out.editRequests.status === "rejected") {
+      console.warn("Não foi possível carregar solicitações de edição:", out.editRequests.reason);
+    }
+  }
+
+  if (out.fechamentoAtual && out.fechamentoAtual.status === "fulfilled") {
+    const f = out.fechamentoAtual.value;
     const unitIndex = state.units.findIndex(u => u.id === state.user.unit_id);
     if (unitIndex >= 0) {
       state.units[unitIndex].coordinator = state.user.user;
       state.units[unitIndex] = mapFechamento(f, state.units[unitIndex]);
 
       try {
-        state.units[unitIndex].editRequest =
-          await api(`/fechamentos/${f.id}/solicitacao-edicao`);
+        state.units[unitIndex].editRequest = await api(`/fechamentos/${f.id}/solicitacao-edicao`);
       } catch (e) {
         console.warn("Solicitação de edição não carregada:", e);
         state.units[unitIndex].editRequest = null;
@@ -230,18 +263,19 @@ async function carregarDados() {
     }
   }
 
-  try {
-    const historico = await api("/historico");
-    state.historyLog = historico.map(h => ({
-      date: new Date(h.timestamp).toLocaleString("pt-BR"),
-      user: `Usuário #${h.user_id}`,
-      action: h.action,
-      unit: state.units.find(u => u.id === h.unit_id)?.name || "—",
-      competence: state.units.find(u => u.id === h.unit_id)?.competence || "—",
-      status: h.status_snapshot || "info"
-    }));
-  } catch (e) {
-    console.warn("Histórico não carregado:", e);
+  if (out.historico) {
+    if (out.historico.status === "fulfilled") {
+      state.historyLog = out.historico.value.map(h => ({
+        date: new Date(h.timestamp).toLocaleString("pt-BR"),
+        user: `Usuário #${h.user_id}`,
+        action: h.action,
+        unit: state.units.find(u => u.id === h.unit_id)?.name || "—",
+        competence: state.units.find(u => u.id === h.unit_id)?.competence || "—",
+        status: h.status_snapshot || "info"
+      }));
+    } else {
+      console.warn("Histórico não carregado:", out.historico.reason);
+    }
   }
 }
 
@@ -482,6 +516,23 @@ async function setLoginFromUser(userData) {
 
   renderNav();
   await refreshCurrentProfilePhoto();
+
+  const content = $("#content");
+  if (content) {
+    content.innerHTML = `
+      <div class="skeleton-v5">
+        <div class="skeleton-v5__bar skeleton-v5__bar--title"></div>
+        <div class="skeleton-v5__row">
+          <div class="skeleton-v5__card"></div>
+          <div class="skeleton-v5__card"></div>
+          <div class="skeleton-v5__card"></div>
+        </div>
+        <div class="skeleton-v5__bar"></div>
+        <div class="skeleton-v5__bar" style="width:70%"></div>
+        <div class="skeleton-v5__bar" style="width:85%"></div>
+      </div>
+    `;
+  }
 
   try {
     await carregarDados();
@@ -1877,11 +1928,11 @@ function bindUnitChips() {
 function bindUnitsPage() {
   bindUnitChips();
 
-  $("#unitSearch")?.addEventListener("input", (e) => {
+  $("#unitSearch")?.addEventListener("input", debounce((e) => {
     unitsUi.query = e.target.value;
     const box = $("#unitsResult");
     if (box) box.innerHTML = unitsResult();
-  });
+  }));
 
   $$("[data-units-mode]").forEach(btn => btn.addEventListener("click", () => {
     unitsUi.mode = btn.dataset.unitsMode;
@@ -2150,13 +2201,13 @@ function bindAuditChips() {
 function bindHistoryPage() {
   bindAuditChips();
 
-  $("#auditSearch")?.addEventListener("input", (e) => {
+  $("#auditSearch")?.addEventListener("input", debounce((e) => {
     auditUi.query = e.target.value;
     const box = $("#auditResult");
     if (box) box.innerHTML = auditResult();
     const count = $("#auditCount");
     if (count) count.textContent = `${auditFiltered().length} evento(s)`;
-  });
+  }));
 
   $("#auditExportBtn")?.addEventListener("click", () => {
     const rows = [["Data", "Usuario", "Acao", "Unidade", "Competencia", "Resultado"]];
@@ -2401,11 +2452,11 @@ function bindUserChips() {
 function bindUsersPage() {
   bindUserChips();
 
-  $("#userSearch")?.addEventListener("input", (e) => {
+  $("#userSearch")?.addEventListener("input", debounce((e) => {
     usersUi.query = e.target.value;
     const box = $("#usersResult");
     if (box) box.innerHTML = usersResult();
-  });
+  }));
 
   $$("[data-users-mode]").forEach(btn => btn.addEventListener("click", () => {
     usersUi.mode = btn.dataset.usersMode;
@@ -3467,12 +3518,21 @@ $("#loginForm").addEventListener("submit", async e => {
     return;
   }
 
+  const submitBtn = $(".login-submit");
+  if (submitBtn.disabled) return;
+  const originalHtml = submitBtn.innerHTML;
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = "<span>…</span> ENTRANDO...";
+
   try {
     const userData = await fazerLogin(email, password);
     await setLoginFromUser(userData);
   } catch (e) {
     console.error(e);
     toast(e.message || "Não foi possível entrar.", "error");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalHtml;
   }
 });
 

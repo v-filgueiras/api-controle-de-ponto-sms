@@ -4042,130 +4042,48 @@ tbody tr:hover { background: #fbfcfe; }
   .user-grid-v5 { grid-template-columns: 1fr; padding: 14px; }
 }
 
+/* --- Loading skeleton (pós-login) --- */
 
-/* =========================================================
-   LOGIN V9 — 60% ESQUERDA / 40% DIREITA
-   ========================================================= */
+.skeleton-v5 { padding: 24px 4px; }
 
-.login-shell {
-  grid-template-columns: minmax(520px, 60%) minmax(380px, 40%) !important;
+.skeleton-v5__bar {
+  height: 16px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  background: linear-gradient(90deg, #eef1f6 25%, #f6f8fb 37%, #eef1f6 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shine 1.4s ease infinite;
 }
 
-/* Garante que os blocos removidos não apareçam */
-.login-visual__points,
-.login-visual__footer {
-  display: none !important;
-}
+.skeleton-v5__bar--title { width: 220px; height: 22px; margin-bottom: 22px; }
 
-/* Área azul */
-.login-visual {
-  padding: 40px 46px 34px !important;
-}
-
-.login-visual__top {
-  margin-bottom: 10px;
-}
-
-.login-visual__center {
-  max-width: 460px !important;
-  margin: auto 0 !important;
-  padding: 20px 0 40px !important;
-}
-
-.login-visual__kicker {
-  margin-bottom: 16px !important;
-  font-size: 11px !important;
-  letter-spacing: .16em !important;
-}
-
-.login-visual__center h1 {
-  max-width: 430px !important;
-  font-size: clamp(42px, 5vw, 64px) !important;
-  line-height: .97 !important;
-  letter-spacing: -.04em !important;
-}
-
-.login-visual__center p {
-  max-width: 360px !important;
-  margin-top: 18px !important;
-  font-size: 15px !important;
-  line-height: 1.55 !important;
-  color: rgba(255,255,255,.74) !important;
-}
-
-.login-watermark {
-  right: -10px !important;
-  bottom: 10px !important;
-  font-size: clamp(110px, 13vw, 210px) !important;
-}
-
-/* Área branca / formulário */
-.login-panel {
-  padding: 34px 36px !important;
-}
-
-.login-panel-inner {
-  width: 100%;
+.skeleton-v5__row {
   display: grid;
-  place-items: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
 }
 
-.login-card {
-  width: min(100%, 430px) !important;
-  padding: 36px 34px 30px !important;
+.skeleton-v5__card {
+  height: 82px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, #eef1f6 25%, #f6f8fb 37%, #eef1f6 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shine 1.4s ease infinite;
 }
 
-.login-card h2 {
-  font-size: 28px !important;
+@keyframes skeleton-shine {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
 }
 
-.login-heading p {
-  font-size: 13.5px !important;
+@media (max-width: 720px) {
+  .skeleton-v5__row { grid-template-columns: 1fr; }
 }
 
-.login-field input {
-  min-height: 50px !important;
-}
+/* --- Botão de login em carregamento --- */
 
-.login-submit {
-  min-height: 50px !important;
-}
-
-/* Intermediário */
-@media (max-width: 1180px) and (min-width: 901px) {
-  .login-shell {
-    grid-template-columns: minmax(440px, 58%) minmax(340px, 42%) !important;
-  }
-
-  .login-visual {
-    padding: 34px 34px 30px !important;
-  }
-
-  .login-visual__center h1 {
-    font-size: 48px !important;
-  }
-
-  .login-panel {
-    padding: 26px 24px !important;
-  }
-
-  .login-card {
-    width: min(100%, 400px) !important;
-    padding: 32px 28px 28px !important;
-  }
-}
-
-/* Mobile mantém só o formulário */
-@media (max-width: 900px) {
-  .login-shell {
-    grid-template-columns: 1fr !important;
-  }
-
-  .login-panel {
-    padding: 24px 18px !important;
-  }
-
-  .login-card {
-    width: min(100%, 500px) !important;
-  }
+.login-submit:disabled {
+  opacity: .8;
+  cursor: progress;
 }
