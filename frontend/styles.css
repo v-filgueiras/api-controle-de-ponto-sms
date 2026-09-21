@@ -4551,3 +4551,24 @@ tbody tr:hover { background: #fbfcfe; }
   .chat-list { border-right: 0; border-bottom: 1px solid var(--line); }
   .chat-msg__bubble { max-width: 90%; }
 }
+
+
+/* Logo da Prefeitura no menu lateral (versão para fundo escuro, sem cartão) */
+.sidebar .brand--official { padding: 4px 0 22px; }
+
+.sidebar .brand-logo-shell--sidebar {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.sidebar .brand-logo--sidebar {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: auto;
+}
