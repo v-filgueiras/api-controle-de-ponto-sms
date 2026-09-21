@@ -426,6 +426,7 @@ const roles = {
     nav: [
       ["dashboard", "⌂", "Painel"],
       ["point", "▦", "Fechamento de ponto"],
+      ["messages", "✉", "Mensagens"],
       ["history", "↺", "Histórico"],
       ["profile", "○", "Meu perfil"]
     ]
@@ -438,6 +439,7 @@ const roles = {
     nav: [
       ["dashboard", "⌂", "Painel"],
       ["approvals", "✓", "Aprovações"],
+      ["messages", "✉", "Mensagens"],
       ["units", "⌘", "Unidades"],
       ["users", "♙", "Coordenadores"],
       ["history", "↺", "Histórico"],
@@ -471,6 +473,647 @@ const statusMeta = {
 function badge(status) {
   const [label, type] = statusMeta[status] || [status, "muted"];
   return `<span class="badge badge--${type}">${label}</span>`;
+}
+
+/* =====================================================================
+   PRAZO — cálculo de vencimento a partir da competência
+   ===================================================================== */
+
+const MESES_PT = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+
+// O período de apuração vai do dia 11 do mês anterior ao dia 10 do mês da
+// própria competência (ex.: competência SETEMBRO/2026 = 11/08 a 10/09), então
+// o prazo interno de envio é o dia 10 do mês da competência.
+function competenceDeadline(competence) {
+  const [mesNome, anoStr] = String(competence || "").split("/");
+  const mesIndex = MESES_PT.indexOf(String(mesNome || "").trim().toUpperCase());
+  const ano = Number(anoStr);
+  if (mesIndex === -1 || !ano) return null;
+  return new Date(ano, mesIndex, 10, 23, 59, 59);
+}
+
+function daysUntil(date) {
+  if (!date) return null;
+  const now = new Date();
+  return Math.ceil((date.setHours ? date : new Date(date)) - now) / 86400000;
+}
+
+function deadlineStatusFor(unit) {
+  if (!["rascunho", "nao_enviado", "correcao"].includes(unit.status)) return null;
+  const deadline = competenceDeadline(unit.competence);
+  if (!deadline) return null;
+  const days = Math.ceil((deadline - new Date()) / 86400000);
+  if (days > 5) return null;
+  return { unit, deadline, days };
+}
+
+/* =====================================================================
+   BANNER DE PRAZO
+   ===================================================================== */
+
+function deadlineBannerHtml() {
+  let relevant = [];
+
+  if (state.role === "coordinator") {
+    const unit = myUnit();
+    if (unit) {
+      const info = deadlineStatusFor(unit);
+      if (info) relevant = [info];
+    }
+  } else {
+    relevant = state.units.map(deadlineStatusFor).filter(Boolean);
+  }
+
+  if (!relevant.length) return "";
+
+  const worst = relevant.reduce((a, b) => (a.days < b.days ? a : b));
+  const tone = worst.days < 0 ? "danger" : worst.days <= 2 ? "danger" : "warning";
+  const icon = worst.days < 0 ? "!" : "◷";
+
+  if (state.role === "coordinator") {
+    const msg = worst.days < 0
+      ? `O prazo para envio do fechamento de ${worst.unit.competence} venceu há ${Math.abs(Math.round(worst.days))} dia(s).`
+      : worst.days < 1
+        ? `O prazo para envio do fechamento de ${worst.unit.competence} termina hoje.`
+        : `Faltam ${Math.ceil(worst.days)} dia(s) para o prazo do fechamento de ${worst.unit.competence}.`;
+
+    return `
+      <div class="deadline-banner deadline-banner--${tone}">
+        <div class="deadline-banner__icon">${icon}</div>
+        <div class="deadline-banner__body">
+          <strong>${worst.days < 0 ? "Prazo vencido" : "Lembrete de prazo"}</strong>
+          <p>${msg} Envie o fechamento o quanto antes para evitar atraso.</p>
+        </div>
+        <button class="btn btn--outline" data-go="point">Abrir fechamento</button>
+      </div>
+    `;
+  }
+
+  const overdue = relevant.filter(r => r.days < 0);
+  const soon = relevant.filter(r => r.days >= 0);
+
+  return `
+    <div class="deadline-banner deadline-banner--${tone}">
+      <div class="deadline-banner__icon">${icon}</div>
+      <div class="deadline-banner__body">
+        <strong>${relevant.length} unidade(s) perto do prazo ou atrasada(s)</strong>
+        <ul>
+          ${overdue.slice(0, 4).map(r => `<li>${escapeHtml(r.unit.name)} — atrasada há ${Math.abs(Math.round(r.days))} dia(s)</li>`).join("")}
+          ${soon.slice(0, 4).map(r => `<li>${escapeHtml(r.unit.name)} — ${Math.ceil(r.days)} dia(s) restante(s)</li>`).join("")}
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+/* =====================================================================
+   NOTIFICAÇÕES
+   ===================================================================== */
+
+state.notifPanelOpen = false;
+
+function notifStorageKey() {
+  return `sms-ponto-notif-lidas-${state.user?.id || "anon"}`;
+}
+
+function getReadNotifIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(notifStorageKey()) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function markNotifRead(id) {
+  const ids = getReadNotifIds();
+  ids.add(id);
+  localStorage.setItem(notifStorageKey(), JSON.stringify([...ids]));
+}
+
+function markAllNotifRead(notifications) {
+  const ids = getReadNotifIds();
+  notifications.forEach(n => ids.add(n.id));
+  localStorage.setItem(notifStorageKey(), JSON.stringify([...ids]));
+}
+
+function computeNotifications() {
+  const items = [];
+
+  if (state.role === "coordinator") {
+    const unit = myUnit();
+    if (unit) {
+      if (unit.status === "aprovado" && unit.rhDecisionAt) {
+        items.push({
+          id: `aprovado-${unit.id}-${unit.rhDecisionAt}`,
+          icon: "✓", tone: "success",
+          title: "Fechamento aprovado",
+          message: `O fechamento de ${unit.competence} foi aprovado pelo RH.`,
+          date: unit.rhDecisionAt, page: "point"
+        });
+      }
+      if (unit.status === "correcao" && unit.rhDecisionAt) {
+        items.push({
+          id: `correcao-${unit.id}-${unit.rhDecisionAt}`,
+          icon: "△", tone: "warning",
+          title: "Correção solicitada",
+          message: unit.rhNote || `O RH pediu uma correção no fechamento de ${unit.competence}.`,
+          date: unit.rhDecisionAt, page: "point"
+        });
+      }
+      if (unit.status === "rejeitado" && unit.rhDecisionAt) {
+        items.push({
+          id: `rejeitado-${unit.id}-${unit.rhDecisionAt}`,
+          icon: "✕", tone: "danger",
+          title: "Fechamento rejeitado",
+          message: unit.rhNote || `O fechamento de ${unit.competence} foi rejeitado pelo RH.`,
+          date: unit.rhDecisionAt, page: "point"
+        });
+      }
+      const info = deadlineStatusFor(unit);
+      if (info) {
+        items.push({
+          id: `prazo-${unit.id}-${unit.competence}`,
+          icon: "◷", tone: info.days < 0 ? "danger" : "warning",
+          title: info.days < 0 ? "Prazo vencido" : "Prazo se aproximando",
+          message: info.days < 0
+            ? `O prazo do fechamento de ${unit.competence} venceu há ${Math.abs(Math.round(info.days))} dia(s).`
+            : `Faltam ${Math.ceil(info.days)} dia(s) para o prazo do fechamento de ${unit.competence}.`,
+          date: new Date().toISOString(), page: "point"
+        });
+      }
+    }
+  }
+
+  if (state.role === "rh" || state.role === "admin") {
+    state.units.filter(u => u.status === "pendente").forEach(unit => {
+      items.push({
+        id: `pendente-${unit.id}-${unit.submittedAt}`,
+        icon: "◷", tone: "info",
+        title: "Fechamento aguardando análise",
+        message: `${unit.name} enviou o fechamento de ${unit.competence}.`,
+        date: unit.submittedAt, page: "review", params: { unitId: unit.id }
+      });
+    });
+
+    (state.editRequests || []).forEach(r => {
+      items.push({
+        id: `edicao-${r.id}`,
+        icon: "✎", tone: "info",
+        title: "Solicitação de edição pendente",
+        message: `${r.requested_by_name || "Coordenador"} (${r.unit_name}) pediu para reabrir o fechamento.`,
+        date: r.created_at, page: "approvals"
+      });
+    });
+
+    state.units.map(deadlineStatusFor).filter(Boolean).forEach(info => {
+      items.push({
+        id: `prazo-${info.unit.id}-${info.unit.competence}`,
+        icon: "◷", tone: info.days < 0 ? "danger" : "warning",
+        title: info.days < 0 ? "Unidade com prazo vencido" : "Unidade perto do prazo",
+        message: info.days < 0
+          ? `${info.unit.name} está atrasada há ${Math.abs(Math.round(info.days))} dia(s).`
+          : `${info.unit.name} tem ${Math.ceil(info.days)} dia(s) até o prazo.`,
+        date: new Date().toISOString(), page: "units"
+      });
+    });
+  }
+
+  (state.chatSummary?.conversations || [])
+    .filter(c => c.unread > 0 && c.last_message)
+    .forEach(c => {
+      const last = c.last_message;
+      const preview = last.body.length > 90 ? `${last.body.slice(0, 90)}…` : last.body;
+      items.push({
+        id: `msg-${c.unit_id}-${last.id}`,
+        icon: "✉", tone: "info",
+        title: state.role === "rh" ? `Mensagem de ${c.unit_name}` : "Mensagem do RH",
+        message: `${last.sender_name}: ${preview}`,
+        date: last.created_at, page: "messages", params: { unitId: c.unit_id }
+      });
+    });
+
+  return items
+    .map(n => ({ ...n, dateObj: n.date ? new Date(n.date) : new Date(0) }))
+    .sort((a, b) => b.dateObj - a.dateObj);
+}
+
+function renderNotifications() {
+  const badge = $("#notifBadge");
+  const list = $("#notifList");
+  if (!badge || !list) return;
+
+  const notifications = computeNotifications();
+  const read = getReadNotifIds();
+  const unread = notifications.filter(n => !read.has(n.id));
+
+  badge.textContent = unread.length > 9 ? "9+" : String(unread.length);
+  badge.classList.toggle("hidden", unread.length === 0);
+
+  if (!notifications.length) {
+    list.innerHTML = `<div class="notif-empty">Nenhuma notificação por aqui.</div>`;
+    return;
+  }
+
+  list.innerHTML = notifications.map(n => `
+    <button type="button" class="notif-item ${!read.has(n.id) ? "notif-item--unread" : ""}" data-notif-id="${n.id}" data-notif-page="${n.page || ""}" data-notif-unit="${n.params?.unitId ?? ""}">
+      <div class="notif-item__icon notif-item__icon--${n.tone}">${n.icon}</div>
+      <div class="notif-item__body">
+        <strong>${escapeHtml(n.title)}</strong>
+        <p>${escapeHtml(n.message)}</p>
+        <span>${n.dateObj && n.dateObj.getTime() ? n.dateObj.toLocaleString("pt-BR") : ""}</span>
+      </div>
+      ${!read.has(n.id) ? `<div class="notif-item__dot"></div>` : ""}
+    </button>
+  `).join("");
+}
+
+function toggleNotifPanel(force) {
+  const panel = $("#notifPanel");
+  const btn = $("#notifBtn");
+  if (!panel || !btn) return;
+  state.notifPanelOpen = typeof force === "boolean" ? force : !state.notifPanelOpen;
+  panel.classList.toggle("hidden", !state.notifPanelOpen);
+  btn.setAttribute("aria-expanded", String(state.notifPanelOpen));
+  if (state.notifPanelOpen) renderNotifications();
+}
+
+function bindNotifications() {
+  $("#notifBtn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleNotifPanel();
+  });
+
+  $("#notifMarkAllBtn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    markAllNotifRead(computeNotifications());
+    renderNotifications();
+  });
+
+  $("#notifList")?.addEventListener("click", (e) => {
+    const item = e.target.closest("[data-notif-id]");
+    if (!item) return;
+    markNotifRead(item.dataset.notifId);
+    toggleNotifPanel(false);
+    const page = item.dataset.notifPage;
+    const unitId = item.dataset.notifUnit;
+    if (page) navigate(page, unitId ? { unitId } : {});
+    renderNotifications();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (state.notifPanelOpen && !e.target.closest("#notifWrap")) toggleNotifPanel(false);
+  });
+
+  setInterval(renderNotifications, 60000);
+}
+
+/* =====================================================================
+   MENSAGENS (chat coordenador <-> RH, uma conversa por unidade)
+   ===================================================================== */
+
+state.chat = { unitId: null, messages: [], lastId: 0, threadTimer: null };
+state.chatSummary = null;
+
+let chatSummaryTimer = null;
+const CHAT_THREAD_POLL_MS = 5000;
+const CHAT_SUMMARY_POLL_MS = 20000;
+
+function chatEnabled() {
+  return !!state.user && (state.role === "coordinator" || state.role === "rh");
+}
+
+/* ---------- resumo (lista de conversas, não lidas, sino) ---------- */
+
+async function refreshChatSummary() {
+  if (!chatEnabled()) return;
+  try {
+    state.chatSummary = await api("/mensagens/resumo");
+    updateChatNavBadge();
+    renderNotifications();
+    if (state.currentPage === "messages") renderChatConversations();
+  } catch (e) {
+    console.warn("Não foi possível atualizar as mensagens:", e);
+  }
+}
+
+function startChatSummaryPolling() {
+  stopChatSummaryPolling();
+  if (!chatEnabled()) return;
+  refreshChatSummary();
+  chatSummaryTimer = setInterval(() => {
+    if (!document.hidden) refreshChatSummary();
+  }, CHAT_SUMMARY_POLL_MS);
+}
+
+function stopChatSummaryPolling() {
+  clearInterval(chatSummaryTimer);
+  chatSummaryTimer = null;
+}
+
+function updateChatNavBadge() {
+  const el = $("#navMsgBadge");
+  if (!el) return;
+  const n = state.chatSummary?.unread_total || 0;
+  el.textContent = n > 9 ? "9+" : String(n);
+  el.classList.toggle("hidden", n === 0);
+}
+
+/* ---------- tela ---------- */
+
+function messagesView() {
+  const isRh = state.role === "rh";
+  return `
+    <div class="chat ${isRh ? "chat--split" : ""}">
+      ${isRh ? `
+        <aside class="chat-list">
+          <div class="chat-list__search">
+            <input id="chatSearch" type="search" placeholder="Buscar unidade..." autocomplete="off" />
+          </div>
+          <div class="chat-list__items" id="chatConvList"></div>
+        </aside>
+      ` : ""}
+      <section class="chat-thread">
+        <header class="chat-thread__head" id="chatHead"></header>
+        <div class="chat-thread__msgs" id="chatMsgs" aria-live="polite"></div>
+        <form class="chat-composer" id="chatForm" novalidate>
+          <textarea id="chatInput" rows="1" maxlength="2000" placeholder="Escreva uma mensagem… (Enter envia, Shift+Enter quebra a linha)" disabled></textarea>
+          <button class="btn btn--primary" id="chatSendBtn" type="submit" disabled>Enviar</button>
+        </form>
+      </section>
+    </div>
+  `;
+}
+
+function chatConversationsSorted() {
+  const time = c => (c.last_message ? new Date(c.last_message.created_at).getTime() : 0);
+  return [...(state.chatSummary?.conversations || [])].sort((a, b) => {
+    const diff = time(b) - time(a);
+    return diff !== 0 ? diff : a.unit_name.localeCompare(b.unit_name, "pt-BR");
+  });
+}
+
+function renderChatConversations() {
+  const box = $("#chatConvList");
+  if (!box) return;
+
+  const q = ($("#chatSearch")?.value || "").trim().toLowerCase();
+  let list = chatConversationsSorted();
+  if (q) list = list.filter(c => c.unit_name.toLowerCase().includes(q));
+
+  if (!list.length) {
+    box.innerHTML = `<div class="chat-empty">Nenhuma unidade encontrada.</div>`;
+    return;
+  }
+
+  box.innerHTML = list.map(c => {
+    const last = c.last_message;
+    const preview = last
+      ? `${last.sender_id === state.user.id ? "Você: " : ""}${last.body}`
+      : "Nenhuma mensagem ainda";
+    return `
+      <button type="button" class="chat-conv ${c.unit_id === state.chat.unitId ? "chat-conv--active" : ""}" data-chat-unit="${c.unit_id}">
+        <div class="chat-conv__mark">${escapeHtml(initials(c.unit_name))}</div>
+        <div class="chat-conv__body">
+          <strong>${escapeHtml(c.unit_name)}</strong>
+          <span>${escapeHtml(preview)}</span>
+        </div>
+        ${c.unread ? `<em class="chat-conv__badge">${c.unread > 9 ? "9+" : c.unread}</em>` : ""}
+      </button>
+    `;
+  }).join("");
+}
+
+function renderChatHead() {
+  const head = $("#chatHead");
+  if (!head) return;
+
+  const unitId = state.chat.unitId;
+  const conv = (state.chatSummary?.conversations || []).find(c => c.unit_id === unitId);
+  const unitName = conv?.unit_name || myUnit()?.name || "";
+
+  if (state.role === "rh") {
+    head.innerHTML = `<strong>${escapeHtml(unitName || "Selecione uma unidade")}</strong><span>Conversa com a coordenação da unidade</span>`;
+  } else {
+    head.innerHTML = `<strong>RH — Secretaria Municipal de Saúde</strong><span>${escapeHtml(unitName)}</span>`;
+  }
+}
+
+function setChatComposerEnabled(enabled) {
+  const input = $("#chatInput");
+  const btn = $("#chatSendBtn");
+  if (input) input.disabled = !enabled;
+  if (btn) btn.disabled = !enabled;
+}
+
+function chatDayLabel(date) {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  if (same(date, today)) return "Hoje";
+  if (same(date, yesterday)) return "Ontem";
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function renderChatMessages({ forceBottom = false } = {}) {
+  const box = $("#chatMsgs");
+  if (!box) return;
+
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+
+  if (!state.chat.messages.length) {
+    box.innerHTML = `<div class="chat-empty">Nenhuma mensagem ainda. Comece a conversa!</div>`;
+    return;
+  }
+
+  let lastDay = "";
+  box.innerHTML = state.chat.messages.map(m => {
+    const date = new Date(m.created_at);
+    const dayKey = date.toDateString();
+    const separator = dayKey !== lastDay ? `<div class="chat-day"><span>${chatDayLabel(date)}</span></div>` : "";
+    lastDay = dayKey;
+
+    const mine = m.sender_id === state.user.id;
+    const role = m.sender_perfil === "rh" ? "RH" : "Coordenação";
+    return `
+      ${separator}
+      <div class="chat-msg ${mine ? "chat-msg--mine" : "chat-msg--theirs"}">
+        <div class="chat-msg__bubble">
+          ${mine ? "" : `<span class="chat-msg__author">${escapeHtml(m.sender_name)} · ${role}</span>`}
+          <p>${escapeHtml(m.body)}</p>
+          <time>${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  if (forceBottom || nearBottom) box.scrollTop = box.scrollHeight;
+}
+
+/* ---------- conversa aberta ---------- */
+
+async function openChatThread(unitId) {
+  stopChatThreadPolling();
+  state.chat.unitId = unitId;
+  state.chat.messages = [];
+  state.chat.lastId = 0;
+
+  renderChatHead();
+  renderChatConversations();
+  setChatComposerEnabled(false);
+
+  const box = $("#chatMsgs");
+  if (box) box.innerHTML = `<div class="chat-empty">Carregando…</div>`;
+
+  try {
+    const msgs = await api(`/unidades/${unitId}/mensagens`);
+    if (state.chat.unitId !== unitId || state.currentPage !== "messages") return;
+
+    state.chat.messages = msgs;
+    state.chat.lastId = msgs.length ? msgs[msgs.length - 1].id : 0;
+    renderChatMessages({ forceBottom: true });
+    setChatComposerEnabled(true);
+    $("#chatInput")?.focus();
+
+    markChatRead(unitId);
+    startChatThreadPolling();
+  } catch (e) {
+    console.error(e);
+    if (box) box.innerHTML = `<div class="chat-empty">Não foi possível carregar a conversa.</div>`;
+    toast(e.message || "Erro ao carregar mensagens.", "error");
+  }
+}
+
+async function markChatRead(unitId) {
+  try {
+    await api(`/unidades/${unitId}/mensagens/lidas`, { method: "POST" });
+  } catch (e) {
+    console.warn("Não foi possível marcar como lidas:", e);
+  }
+  refreshChatSummary();
+}
+
+async function pollChatThread() {
+  const unitId = state.chat.unitId;
+  if (!unitId || document.hidden || state.currentPage !== "messages") return;
+
+  try {
+    const novas = await api(`/unidades/${unitId}/mensagens?after_id=${state.chat.lastId}`);
+    if (state.chat.unitId !== unitId || !novas.length) return;
+
+    const known = new Set(state.chat.messages.map(m => m.id));
+    const fresh = novas.filter(m => !known.has(m.id));
+    if (!fresh.length) return;
+
+    state.chat.messages.push(...fresh);
+    state.chat.lastId = fresh[fresh.length - 1].id;
+    renderChatMessages();
+
+    if (fresh.some(m => m.sender_id !== state.user.id)) markChatRead(unitId);
+  } catch (e) {
+    console.warn("Falha ao buscar novas mensagens:", e);
+  }
+}
+
+function startChatThreadPolling() {
+  stopChatThreadPolling();
+  state.chat.threadTimer = setInterval(pollChatThread, CHAT_THREAD_POLL_MS);
+}
+
+function stopChatThreadPolling() {
+  clearInterval(state.chat.threadTimer);
+  state.chat.threadTimer = null;
+}
+
+async function sendChatMessage() {
+  const unitId = state.chat.unitId;
+  const input = $("#chatInput");
+  if (!unitId || !input) return;
+
+  const body = input.value.trim();
+  if (!body) return;
+
+  setChatComposerEnabled(false);
+  try {
+    await api(`/unidades/${unitId}/mensagens`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body })
+    });
+    input.value = "";
+    input.style.height = "auto";
+
+    // Busca tudo que ficou pendente (inclusive a mensagem que acabamos de enviar),
+    // sem risco de pular uma mensagem do outro lado que chegou no meio.
+    await pollChatThread();
+    $("#chatMsgs").scrollTop = $("#chatMsgs").scrollHeight;
+    refreshChatSummary();
+  } catch (e) {
+    toast(e.message || "Não foi possível enviar a mensagem.", "error");
+  } finally {
+    setChatComposerEnabled(true);
+    input.focus();
+  }
+}
+
+async function initMessagesPage(requestedUnitId) {
+  const input = $("#chatInput");
+
+  $("#chatForm")?.addEventListener("submit", e => {
+    e.preventDefault();
+    sendChatMessage();
+  });
+
+  input?.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
+  input?.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+  });
+
+  $("#chatSearch")?.addEventListener("input", debounce(renderChatConversations, 120));
+
+  $("#chatConvList")?.addEventListener("click", e => {
+    const item = e.target.closest("[data-chat-unit]");
+    if (!item) return;
+    const unitId = Number(item.dataset.chatUnit);
+    if (unitId !== state.chat.unitId) openChatThread(unitId);
+  });
+
+  if (state.role === "coordinator") {
+    if (!state.user.unit_id) {
+      renderChatHead();
+      $("#chatMsgs").innerHTML = `<div class="chat-empty">Você ainda não está vinculado a uma unidade. Peça ao RH ou ao administrador para fazer o vínculo.</div>`;
+      return;
+    }
+    await refreshChatSummary();
+    if (state.currentPage !== "messages") return;
+    openChatThread(state.user.unit_id);
+    return;
+  }
+
+  // RH
+  $("#chatConvList").innerHTML = `<div class="chat-empty">Carregando…</div>`;
+  await refreshChatSummary();
+  if (state.currentPage !== "messages") return;
+
+  const sorted = chatConversationsSorted();
+  if (!sorted.length) {
+    $("#chatConvList").innerHTML = `<div class="chat-empty">Nenhuma unidade ativa.</div>`;
+    $("#chatMsgs").innerHTML = `<div class="chat-empty">Não há unidades para conversar.</div>`;
+    return;
+  }
+
+  const wanted = Number(requestedUnitId) || state.chat.unitId;
+  const pick = sorted.find(c => c.unit_id === wanted)
+    || sorted.find(c => c.unread > 0)
+    || sorted[0];
+  openChatThread(pick.unit_id);
 }
 
 function toast(message, type = "") {
@@ -537,6 +1180,8 @@ async function setLoginFromUser(userData) {
   try {
     await carregarDados();
     navigate("dashboard");
+    renderNotifications();
+    startChatSummaryPolling();
   } catch (e) {
     console.error(e);
     toast(e.message || "Erro ao carregar dados do sistema.", "error");
@@ -544,6 +1189,13 @@ async function setLoginFromUser(userData) {
 }
 
 function logout() {
+  stopChatSummaryPolling();
+  stopChatThreadPolling();
+  state.chatSummary = null;
+  state.chat.unitId = null;
+  state.chat.messages = [];
+  state.chat.lastId = 0;
+
   if (currentProfilePhotoUrl) {
     URL.revokeObjectURL(currentProfilePhotoUrl);
     currentProfilePhotoUrl = null;
@@ -564,13 +1216,16 @@ function renderNav() {
     <button data-page="${page}">
       <span class="nav-icon">${icon}</span>
       <span>${label}</span>
+      ${page === "messages" ? `<span class="nav-badge hidden" id="navMsgBadge">0</span>` : ""}
     </button>
   `).join("");
 
   $$("#mainNav button").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.page)));
+  updateChatNavBadge();
 }
 
 function navigate(page, params = {}) {
+  stopChatThreadPolling();
   state.currentPage = page;
   $$("#mainNav button").forEach(b => b.classList.toggle("active", b.dataset.page === page));
   $("#sidebar").classList.remove("open");
@@ -583,6 +1238,7 @@ function navigate(page, params = {}) {
     history: ["Registros", state.role === "admin" ? "Auditoria" : "Histórico"],
     users: ["Administração", "Usuários e hierarquia"],
     profile: ["Conta", "Meu perfil"],
+    messages: ["Comunicação", "Mensagens"],
     review: ["Aprovações", "Analisar fechamento"]
   };
 
@@ -604,9 +1260,11 @@ function navigate(page, params = {}) {
   if (page === "history") content.innerHTML = historyView();
   if (page === "users") content.innerHTML = usersView();
   if (page === "profile") content.innerHTML = profileView();
+  if (page === "messages") content.innerHTML = messagesView();
   if (page === "review") content.innerHTML = reviewView(params.unitId || 2);
 
   bindCurrentPage();
+  if (page === "messages") initMessagesPage(params.unitId);
 }
 
 function coordinatorDashboard() {
@@ -3563,4 +4221,6 @@ $("#forgotPasswordLink")?.addEventListener("click", (e) => {
 });
 
 $("#logoutBtn").addEventListener("click", logout);
+
+bindNotifications();
 $("#menuBtn").addEventListener("click", () => $("#sidebar").classList.toggle("open"));

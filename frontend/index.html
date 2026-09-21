@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/styles.css?v=20260916-v10" />
+  <link rel="stylesheet" href="static/styles.css?v=20260921-v11" />
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -111,7 +111,16 @@
           <h2 id="pageTitle">Painel</h2>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button notification" title="Notificações">♢<span>3</span></button>
+          <div class="notif-wrap" id="notifWrap">
+            <button class="icon-button notification" id="notifBtn" title="Notificações" aria-haspopup="true" aria-expanded="false">♢<span id="notifBadge" class="hidden">0</span></button>
+            <div class="notif-panel hidden" id="notifPanel">
+              <div class="notif-panel__head">
+                <strong>Notificações</strong>
+                <button type="button" id="notifMarkAllBtn" class="notif-panel__mark-all">Marcar tudo como lido</button>
+              </div>
+              <div class="notif-panel__list" id="notifList"></div>
+            </div>
+          </div>
           <div class="avatar" id="topAvatar">VF</div>
         </div>
       </header>
@@ -122,6 +131,6 @@
 
   <div id="modalRoot"></div>
 
-  <script src="static/app.js?v=20260916-v10"></script>
+  <script src="static/app.js?v=20260921-v11"></script>
 </body>
 </html>
