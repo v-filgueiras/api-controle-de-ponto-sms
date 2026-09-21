@@ -4572,3 +4572,24 @@ tbody tr:hover { background: #fbfcfe; }
   max-height: none;
   height: auto;
 }
+/* =====================================================================
+   DETECÇÃO INTELIGENTE DE PADRÕES
+   ===================================================================== */
+.patterns-list-v5 { padding: 16px 18px 20px; display: grid; gap: 12px; }
+.pattern-v5 { border: 1px solid var(--line); border-left: 4px solid var(--warning); border-radius: 12px; padding: 15px 16px; background: var(--surface); }
+.pattern-v5--danger { border-left-color: var(--danger); }
+.pattern-v5--warning { border-left-color: var(--warning); }
+.pattern-v5__top { display:flex; align-items:center; gap:11px; }
+.pattern-v5__icon { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background:var(--warning-soft); color:var(--warning); font-weight:700; flex:0 0 auto; }
+.pattern-v5--danger .pattern-v5__icon { background:var(--danger-soft); color:var(--danger); }
+.pattern-v5__top > div { min-width:0; flex:1; }
+.pattern-v5__top strong { display:block; font-size:13px; }
+.pattern-v5__top small { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
+.pattern-v5 p { margin:12px 0 9px; color:#4e5b6e; font-size:12px; line-height:1.5; }
+.pattern-v5__chips { display:flex; gap:6px; flex-wrap:wrap; }
+.pattern-v5__chips .tag-v5 b { color:var(--primary); }
+.pattern-v5__hint { display:block; margin-top:10px; color:#98a2b1; font-size:10px; }
+@media (max-width:720px) {
+  .pattern-v5__top { align-items:flex-start; flex-wrap:wrap; }
+  .pattern-v5__top .badge { margin-left:43px; }
+}

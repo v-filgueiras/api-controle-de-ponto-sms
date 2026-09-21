@@ -22,6 +22,7 @@ from routes.documents import router as documents_router
 from routes.history_log import router as history_log_router
 from routes.dashboard import router as dashboard_router
 from routes.mensagens import router as mensagens_router
+from routes.audit import router as audit_router
 
 
 app = FastAPI(
@@ -52,6 +53,7 @@ app.include_router(documents_router)
 app.include_router(history_log_router)
 app.include_router(dashboard_router)
 app.include_router(mensagens_router)
+app.include_router(audit_router)
 
 
 # Arquivos do frontend

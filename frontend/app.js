@@ -443,6 +443,7 @@ const roles = {
       ["units", "⌘", "Unidades"],
       ["users", "♙", "Coordenadores"],
       ["history", "↺", "Histórico"],
+      ["patterns", "◈", "Padrões inteligentes"],
       ["profile", "○", "Meu perfil"]
     ]
   },
@@ -456,6 +457,7 @@ const roles = {
       ["users", "♙", "Usuários e hierarquia"],
       ["units", "⌘", "Unidades"],
       ["history", "↺", "Auditoria"],
+      ["patterns", "◈", "Padrões inteligentes"],
       ["profile", "○", "Meu perfil"]
     ]
   }
@@ -1236,6 +1238,7 @@ function navigate(page, params = {}) {
     approvals: ["Fluxo de aprovação", "Aprovações"],
     units: ["Estrutura", "Unidades"],
     history: ["Registros", state.role === "admin" ? "Auditoria" : "Histórico"],
+    patterns: ["Inteligência", "Padrões inteligentes"],
     users: ["Administração", "Usuários e hierarquia"],
     profile: ["Conta", "Meu perfil"],
     messages: ["Comunicação", "Mensagens"],
@@ -1258,6 +1261,7 @@ function navigate(page, params = {}) {
   if (page === "approvals") content.innerHTML = approvalsView();
   if (page === "units") content.innerHTML = unitsView();
   if (page === "history") content.innerHTML = historyView();
+  if (page === "patterns") content.innerHTML = patternsView();
   if (page === "users") content.innerHTML = usersView();
   if (page === "profile") content.innerHTML = profileView();
   if (page === "messages") content.innerHTML = messagesView();
@@ -2875,6 +2879,127 @@ function bindHistoryPage() {
   });
 }
 
+
+/* =====================================================================
+   DETECÇÃO INTELIGENTE DE PADRÕES
+   ===================================================================== */
+
+const patternsUi = { competence: "", unitId: "", data: null, loading: false };
+
+function patternLevelMeta(level) {
+  return level === "attention"
+    ? { label: "Atenção", cls: "danger", icon: "!" }
+    : { label: "Verificar", cls: "warning", icon: "⌁" };
+}
+
+function patternsView() {
+  const data = patternsUi.data;
+  const summary = data?.summary || { patterns: 0, attention: 0, review: 0 };
+  const units = state.units || [];
+
+  return `
+    <div class="head-v5">
+      <div class="head-v5__text">
+        <span class="head-v5__eyebrow">INTELIGÊNCIA</span>
+        <h1>Padrões inteligentes</h1>
+        <p>O sistema compara os lançamentos atuais com o histórico dos servidores, do cargo e da unidade para apontar comportamentos fora do padrão.</p>
+      </div>
+      <div class="head-v5__actions">
+        <button class="btn btn--outline" id="patternsRefreshBtn">↻ Analisar novamente</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-pad">
+        <div class="form-grid">
+          <label class="field">
+            <span>Competência</span>
+            <input id="patternsCompetence" value="${escapeHtml(patternsUi.competence)}" placeholder="Ex.: SETEMBRO/2026" />
+          </label>
+          <label class="field">
+            <span>Unidade</span>
+            <select id="patternsUnit">
+              <option value="">Todas as unidades</option>
+              ${units.map(u => `<option value="${u.id}" ${String(patternsUi.unitId) === String(u.id) ? "selected" : ""}>${escapeHtml(u.name)}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+        <p class="muted" style="margin:12px 0 0">São necessários pelo menos 2 históricos do servidor para uma comparação individual. Os alertas são indicativos e devem ser conferidos pelo RH.</p>
+      </div>
+    </div>
+
+    <div class="stats-v5">
+      <article class="stat-v5 stat-v5--primary"><div class="stat-v5__icon">◈</div><div class="stat-v5__body"><span>Padrões encontrados</span><strong>${summary.patterns}</strong><small>${data?.competence || "análise ainda não executada"}</small></div></article>
+      <article class="stat-v5 stat-v5--danger"><div class="stat-v5__icon">!</div><div class="stat-v5__body"><span>Atenção</span><strong>${summary.attention}</strong><small>mudanças mais expressivas</small></div></article>
+      <article class="stat-v5 stat-v5--warning"><div class="stat-v5__icon">⌁</div><div class="stat-v5__body"><span>Para verificar</span><strong>${summary.review}</strong><small>fora do padrão esperado</small></div></article>
+      <article class="stat-v5 stat-v5--success"><div class="stat-v5__icon">✓</div><div class="stat-v5__body"><span>Histórico utilizado</span><strong>${data?.method?.minimum_history || 2}+</strong><small>competências por servidor</small></div></article>
+    </div>
+
+    <section class="panel-v5">
+      <div class="panel-v5__toolbar">
+        <strong style="font-size:14px">Alertas encontrados</strong>
+        <span class="panel-v5__count">${data?.patterns?.length || 0} registro(s)</span>
+      </div>
+      ${patternsResultHtml(data)}
+    </section>
+  `;
+}
+
+function patternsResultHtml(data) {
+  if (patternsUi.loading) return `<div class="empty-v5"><div class="empty-v5__mark">↻</div><strong>Analisando histórico…</strong><p>Comparando servidores, cargos e unidades.</p></div>`;
+  if (!data) return `<div class="empty-v5"><div class="empty-v5__mark">◈</div><strong>Pronto para analisar</strong><p>Clique em “Analisar novamente” para executar a detecção de padrões.</p></div>`;
+  if (!data.patterns?.length) return `<div class="empty-v5"><div class="empty-v5__mark">✓</div><strong>Nenhum padrão fora do esperado foi encontrado</strong><p>Isso não significa que os lançamentos estejam automaticamente corretos; significa apenas que não houve sinal estatístico pelos critérios atuais.</p></div>`;
+
+  return `<div class="patterns-list-v5">${data.patterns.map(patternCardHtml).join("")}</div>`;
+}
+
+function patternCardHtml(p) {
+  const meta = patternLevelMeta(p.level);
+  if (p.kind === "servidor") {
+    return `<article class="pattern-v5 pattern-v5--${meta.cls}">
+      <div class="pattern-v5__top"><span class="pattern-v5__icon">${meta.icon}</span><div><strong>${escapeHtml(p.nome)}</strong><small>${escapeHtml(p.cargo || "Cargo não informado")} · matrícula ${escapeHtml(p.matricula)}</small></div><span class="badge badge--${meta.cls}">${meta.label}</span></div>
+      <p>${escapeHtml(p.message)}</p>
+      <div class="pattern-v5__chips">${p.anomalies.map(a => `<span class="tag-v5"><b>${escapeHtml(a.label)}</b> ${a.current} · média ${a.history.mean}${a.ratio ? ` · ${a.ratio}x` : ""}</span>`).join("")}</div>
+      <small class="pattern-v5__hint">${escapeHtml(p.unit_name)} · ${escapeHtml(p.competence)} · ${p.historico_meses} competência(s) históricas usadas</small>
+    </article>`;
+  }
+  return `<article class="pattern-v5 pattern-v5--${meta.cls}">
+    <div class="pattern-v5__top"><span class="pattern-v5__icon">${meta.icon}</span><div><strong>${escapeHtml(p.message)}</strong><small>${escapeHtml(p.unit_name)} · ${escapeHtml(p.competence)}</small></div><span class="badge badge--${meta.cls}">${meta.label}</span></div>
+    <p>${p.current != null ? `${escapeHtml(p.label)} atual: <b>${p.current}</b> · média histórica: <b>${p.historical_mean}</b> · ${p.ratio}x` : `${p.affected} servidores envolvidos`}</p>
+  </article>`;
+}
+
+async function runPatternsAnalysis() {
+  patternsUi.competence = $("#patternsCompetence")?.value.trim() || "";
+  patternsUi.unitId = $("#patternsUnit")?.value || "";
+  patternsUi.loading = true;
+  const box = $("#content");
+  if (box) box.innerHTML = patternsView();
+  bindPatternsPage();
+  try {
+    const params = new URLSearchParams();
+    if (patternsUi.competence) params.set("competence", patternsUi.competence);
+    if (patternsUi.unitId) params.set("unit_id", patternsUi.unitId);
+    patternsUi.data = await api(`/auditoria/padroes?${params.toString()}`);
+  } catch (e) {
+    patternsUi.data = null;
+    toast(e.message || "Não foi possível executar a análise.", "error");
+  } finally {
+    patternsUi.loading = false;
+    if (state.currentPage === "patterns") {
+      $("#content").innerHTML = patternsView();
+      bindPatternsPage();
+    }
+  }
+}
+
+function bindPatternsPage() {
+  $("#patternsRefreshBtn")?.addEventListener("click", runPatternsAnalysis);
+  if (!patternsUi.data && !patternsUi.loading && state.currentPage === "patterns") {
+    setTimeout(runPatternsAnalysis, 0);
+  }
+}
+
 /* =====================================================================
    USUÁRIOS E HIERARQUIA — layout v5
    ===================================================================== */
@@ -3327,6 +3452,7 @@ function bindCurrentPage() {
   if (state.currentPage === "point") bindPointPage();
   if (state.currentPage === "units") bindUnitsPage();
   if (state.currentPage === "history") bindHistoryPage();
+  if (state.currentPage === "patterns") bindPatternsPage();
   if (state.currentPage === "users") bindUsersPage();
 
   const reloadRhDashboard = async () => {
