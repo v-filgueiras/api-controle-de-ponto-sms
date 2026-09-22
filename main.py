@@ -22,6 +22,10 @@ from routes.documents import router as documents_router
 from routes.history_log import router as history_log_router
 from routes.dashboard import router as dashboard_router
 from routes.mensagens import router as mensagens_router
+from routes.cleanup_messages import iniciar_limpeza, parar_limpeza
+from routes.audit_ai_patterns import router as audit_ia_router
+from routes.audit_reports import router as audit_reports_router
+
 from routes.audit import router as audit_router
 
 
@@ -31,6 +35,15 @@ app = FastAPI(
 )
 
 Base.metadata.create_all(bind=engine)
+
+@app.on_event("startup")
+async def startup_event():
+      iniciar_limpeza()
+  
+@app.on_event("shutdown")
+async def shutdown_event():
+      parar_limpeza()
+
 
 
 app.add_middleware(
@@ -53,6 +66,9 @@ app.include_router(documents_router)
 app.include_router(history_log_router)
 app.include_router(dashboard_router)
 app.include_router(mensagens_router)
+app.include_router(audit_ia_router)
+app.include_router(audit_reports_router)
+
 app.include_router(audit_router)
 
 

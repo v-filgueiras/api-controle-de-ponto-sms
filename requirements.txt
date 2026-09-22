@@ -15,3 +15,5 @@ bcrypt==4.3.0
 
 python-jose[cryptography]==3.5.0
 cryptography==46.0.3
+
+apscheduler
