@@ -398,3 +398,32 @@ def excluir_usuario(
     return {
         "message": "Usuário excluído do acesso ao sistema. O histórico foi preservado."
     }
+
+
+@router.patch("/{user_id}/reativar")
+def reativar_usuario(
+    user_id: int,
+    db: Session = Depends(get_db),
+    actor: Users = Depends(require_role("admin", "rh")),
+):
+    user = db.query(Users).filter(Users.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    validar_gerenciamento_de_coordenador(actor, user)
+
+    if user.status:
+        raise HTTPException(status_code=409, detail="Este usuário já está ativo.")
+
+    user.status = True
+
+    registrar_acao_administrativa(
+        db,
+        actor,
+        f"Reativou usuário: {user.name} ({user.perfil})",
+        user.unit_id,
+    )
+
+    db.commit()
+
+    return {"message": "Usuário reativado com sucesso."}
