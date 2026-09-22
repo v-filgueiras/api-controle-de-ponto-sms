@@ -32,7 +32,7 @@ async function refreshCurrentProfilePhoto() {
 
   try {
     const token = getToken();
-    const response = await fetchProtegido(
+    const response = await fetch(
       `${API_URL}/usuarios/${state.user.id}/foto?t=${Date.now()}`,
       {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
