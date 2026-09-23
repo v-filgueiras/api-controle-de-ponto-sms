@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 from database.connect import get_db
 from deps import get_current_user, require_role
+from email_utils import email_tem_dominio_real
 from models import HistoryLog, Units, Users
+from routes.auth_extra import criar_verificacao_e_enviar
 from schemas.users import UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
@@ -113,7 +115,16 @@ def listar_usuarios(
     db: Session = Depends(get_db),
     actor: Users = Depends(require_role("admin", "rh")),
 ):
-    query = db.query(Users)
+    query = db.query(
+        Users.id,
+        Users.name,
+        Users.email,
+        Users.perfil,
+        Users.unit_id,
+        Users.status,
+        Users.created_at,
+        Users.updated_at,
+    )
 
     # O RH só precisa visualizar coordenadores.
     if actor.perfil == "rh":
@@ -231,6 +242,10 @@ def criar_usuario(
     if db.query(Users).filter(Users.email == payload.email).first():
         raise HTTPException(status_code=409, detail="Já existe um usuário com esse e-mail.")
 
+    email_valido, motivo = email_tem_dominio_real(str(payload.email))
+    if not email_valido:
+        raise HTTPException(status_code=422, detail=f"E-mail inválido ou com domínio inexistente: {motivo}")
+
     user = Users(
         name=payload.name,
         email=payload.email,
@@ -242,6 +257,10 @@ def criar_usuario(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    criar_verificacao_e_enviar(db, user)
+    db.commit()
+
     return user
 
 
