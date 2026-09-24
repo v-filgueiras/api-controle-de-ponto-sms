@@ -28,16 +28,18 @@ def listar_historico(
 
     query = db.query(HistoryLog)
 
-    if user.perfil == "coordinator":
-        query = query.filter(HistoryLog.unit_id == user.unit_id)
-    elif user.perfil not in ("admin", "rh"):
+    # Só o RH enxerga o histórico global. Admin e coordinator só veem as
+    # próprias ações (registradas com o user_id de quem agiu).
+    if user.perfil == "rh":
+        pass
+    elif user.perfil in ("admin", "coordinator"):
+        query = query.filter(HistoryLog.user_id == user.id)
+    else:
         raise HTTPException(status_code=403, detail="Acesso não autorizado.")
 
     if fechamento_id is not None:
         query = query.filter(HistoryLog.fechamento_id == fechamento_id)
     if unit_id is not None:
-        if user.perfil == "coordinator" and unit_id != user.unit_id:
-            raise HTTPException(status_code=403, detail="Você só pode acessar a própria unidade.")
         query = query.filter(HistoryLog.unit_id == unit_id)
 
     return (
@@ -58,15 +60,14 @@ def historico_do_fechamento(
     fechamento = db.query(Fechamentos).filter(Fechamentos.id == fechamento_id).first()
     if not fechamento:
         raise HTTPException(status_code=404, detail="Fechamento não encontrado.")
-    if user.perfil == "coordinator" and user.unit_id != fechamento.unit_id:
-        raise HTTPException(status_code=403, detail="Você só pode acessar a própria unidade.")
 
     limit = max(1, min(limit, HISTORICO_LIMIT_MAXIMO))
 
-    return (
-        db.query(HistoryLog)
-        .filter(HistoryLog.fechamento_id == fechamento_id)
-        .order_by(HistoryLog.timestamp.desc())
-        .limit(limit)
-        .all()
-    )
+    query = db.query(HistoryLog).filter(HistoryLog.fechamento_id == fechamento_id)
+
+    # Só o RH enxerga todas as ações do fechamento. Admin e coordinator só
+    # veem as próprias ações dentro dele.
+    if user.perfil != "rh":
+        query = query.filter(HistoryLog.user_id == user.id)
+
+    return query.order_by(HistoryLog.timestamp.desc()).limit(limit).all()

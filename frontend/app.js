@@ -136,7 +136,8 @@ function mapUser(u) {
     perfilRaw: u.perfil,
     unit_id: u.unit_id,
     unidade: unit?.name || (u.perfil === "coordinator" ? "Sem unidade vinculada" : "Secretaria Municipal de Saúde"),
-    status: u.status ? "Ativo" : "Inativo"
+    status: u.status ? "Ativo" : "Inativo",
+    approvalStatus: u.approval_status || "aprovado"
   };
 }
 
@@ -187,6 +188,7 @@ async function carregarDados() {
   if (state.role === "admin" || state.role === "rh") {
     tasks.usuarios = api("/usuarios");
     tasks.aprovacoes = api("/aprovacoes");
+    tasks.usuariosPendentes = api("/usuarios/pendentes");
   }
 
   if (state.role === "rh") {
@@ -230,6 +232,15 @@ async function carregarDados() {
       });
     } else {
       console.warn("Não foi possível carregar aprovações:", out.aprovacoes.reason);
+    }
+  }
+
+  if (out.usuariosPendentes) {
+    state.pendingUsers = out.usuariosPendentes.status === "fulfilled"
+      ? out.usuariosPendentes.value.map(mapUser)
+      : [];
+    if (out.usuariosPendentes.status === "rejected") {
+      console.warn("Não foi possível carregar cadastros pendentes:", out.usuariosPendentes.reason);
     }
   }
 
@@ -309,6 +320,22 @@ async function fazerLogin(email, senha) {
 }
 
 
+async function registrarConta(name, email, senha) {
+  const response = await fetch(`${API_URL}/auth/registrar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password: senha })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.detail || "Não foi possível criar a conta.");
+  }
+
+  return data;
+}
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -324,6 +351,7 @@ const state = {
   signatureMethod: "",
   rhDashboard: null,
   editRequests: [],
+  pendingUsers: [],
   units: [
     {
       id: 1, name: "USF Nova Três Lagoas", coordinator: "Coord. Nova Três Lagoas", status: "rascunho", competence: "SETEMBRO/2026",
@@ -455,7 +483,7 @@ const roles = {
       ["dashboard", "⌂", "Painel"],
       ["users", "♙", "Usuários e hierarquia"],
       ["units", "⌘", "Unidades"],
-      ["history", "↺", "Auditoria"],
+      ["history", "↺", "Meu histórico"],
       ["profile", "○", "Meu perfil"]
     ]
   }
@@ -1235,7 +1263,7 @@ function navigate(page, params = {}) {
     point: ["Fechamento", "Fechamento de ponto"],
     approvals: ["Fluxo de aprovação", "Aprovações"],
     units: ["Estrutura", "Unidades"],
-    history: ["Registros", state.role === "admin" ? "Auditoria" : "Histórico"],
+    history: ["Registros", "Meu histórico"],
     messages: ["Comunicação", "Mensagens"],
     users: ["Administração", "Usuários e hierarquia"],
     profile: ["Conta", "Meu perfil"],
@@ -2688,11 +2716,8 @@ function auditFiltered() {
 }
 
 function historyView() {
-  const isAdmin = state.role === "admin";
-  const title = isAdmin ? "Auditoria do sistema" : "Histórico de fechamentos";
-  const desc = isAdmin
-    ? "Acompanhe todas as ações registradas no sistema."
-    : "Acompanhe o histórico de fechamentos da sua unidade.";
+  const title = "Meu histórico";
+  const desc = "Acompanhe as ações que você realizou no sistema.";
 
   return `
     <div class="head-v5">
@@ -2923,6 +2948,8 @@ function usersView() {
 
     ${usersStats()}
 
+    ${pendingUsersPanel()}
+
     ${isAdmin ? `
       <div class="levels-v5">
         <article class="level-v5 level-v5--1">
@@ -2963,6 +2990,47 @@ function usersView() {
   `;
 }
 
+function pendingUsersPanel() {
+  const pendentes = state.pendingUsers || [];
+  if (!pendentes.length) return "";
+
+  return `
+    <section class="panel-v5 panel-v5--pending" id="pendingUsersPanel">
+      <div class="panel-v5__toolbar">
+        <div>
+          <strong>Cadastros aguardando aprovação</strong>
+          <p class="muted" style="margin:2px 0 0;font-size:13px;">
+            Aprove para liberar o acesso ao sistema ou rejeite o cadastro.
+          </p>
+        </div>
+        <span class="badge badge--warning">${pendentes.length} pendente(s)</span>
+      </div>
+      <div class="user-grid-v5">
+        ${pendentes.map(u => `
+          <article class="user-v5 user-v5--${u.perfilRaw}">
+            <header class="user-v5__head">
+              <div class="user-v5__avatar" aria-hidden="true">${initials(u.nome)}</div>
+              <div class="user-v5__id">
+                <strong>${escapeHtml(u.nome)}</strong>
+                <span>${escapeHtml(u.email)}</span>
+              </div>
+              <span class="badge badge--warning">Pendente</span>
+            </header>
+            <div class="user-v5__meta">
+              <span class="role-chip">${escapeHtml(u.perfil)}</span>
+              <span class="tag-v5"><i aria-hidden="true">▦</i>${escapeHtml(u.unidade)}</span>
+            </div>
+            <footer class="user-v5__foot">
+              <button class="table-action" data-v5 data-approve-user="${u.id}">Aprovar</button>
+              <button class="table-action table-action--danger" data-v5 data-reject-user="${u.id}">Rejeitar</button>
+            </footer>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function usersStats() {
   const all = usersScope();
   const by = p => all.filter(u => u.perfilRaw === p).length;
@@ -2973,6 +3041,7 @@ function usersStats() {
     ["Usuários", all.length, `${all.filter(u => u.status === "Ativo").length} ativo(s)`, "primary", "○"],
     ["Coordenadores", coords.length, `${coords.length - semVinculo} com unidade vinculada`, "success", "▦"],
     ["Sem vínculo", semVinculo, "aguardando vinculação de unidade", "warning", "!"],
+    ["Aguardando aprovação", (state.pendingUsers || []).length, "cadastros com e-mail confirmado", "warning", "✓"],
     ["RH e Administração", by("rh") + by("admin"), "acessos com escopo global", "info", "⌘"]
   ];
 
@@ -3010,7 +3079,24 @@ function usersChips() {
   }).join("");
 }
 
+function statusBadge(u) {
+  if (u.approvalStatus === "pendente") return `<span class="badge badge--warning">Pendente</span>`;
+  if (u.approvalStatus === "rejeitado") return `<span class="badge badge--danger">Rejeitado</span>`;
+  return `<span class="badge ${u.status === "Ativo" ? "badge--success" : "badge--danger"}">${escapeHtml(u.status)}</span>`;
+}
+
 function userActions(u) {
+  if (u.approvalStatus === "pendente") {
+    return `
+      <button class="table-action" data-v5 data-approve-user="${u.id}">Aprovar</button>
+      <button class="table-action table-action--danger" data-v5 data-reject-user="${u.id}">Rejeitar</button>
+    `;
+  }
+
+  if (u.approvalStatus === "rejeitado") {
+    return `<span class="unit-v5__hint">Cadastro rejeitado</span>`;
+  }
+
   if (u.status === "Inativo") {
     return `
       ${u.id !== state.user?.id
@@ -3065,7 +3151,7 @@ function usersResult() {
                 <td>${escapeHtml(u.email)}</td>
                 <td><span class="role-chip">${escapeHtml(u.perfil)}</span></td>
                 <td>${escapeHtml(u.unidade)}</td>
-                <td><span class="badge ${u.status === "Ativo" ? "badge--success" : "badge--danger"}">${escapeHtml(u.status)}</span></td>
+                <td>${statusBadge(u)}</td>
                 <td><div class="actions">${userActions(u)}</div></td>
               </tr>
             `).join("")}
@@ -3085,7 +3171,7 @@ function usersResult() {
               <strong>${escapeHtml(u.nome)}</strong>
               <span>${escapeHtml(u.email)}</span>
             </div>
-            <span class="badge ${u.status === "Ativo" ? "badge--success" : "badge--danger"}">${escapeHtml(u.status)}</span>
+            ${statusBadge(u)}
           </header>
 
           <div class="user-v5__meta">
@@ -3152,7 +3238,53 @@ function bindUsersPage() {
 
     const reactivate = e.target.closest("[data-reactivate-user]");
     if (reactivate) return reactivateUserById(Number(reactivate.dataset.reactivateUser));
+
+    const approve = e.target.closest("[data-approve-user]");
+    if (approve) return approveUserById(Number(approve.dataset.approveUser));
+
+    const reject = e.target.closest("[data-reject-user]");
+    if (reject) return rejectUserById(Number(reject.dataset.rejectUser));
   });
+
+  $("#pendingUsersPanel")?.addEventListener("click", (e) => {
+    const approve = e.target.closest("[data-approve-user]");
+    if (approve) return approveUserById(Number(approve.dataset.approveUser));
+
+    const reject = e.target.closest("[data-reject-user]");
+    if (reject) return rejectUserById(Number(reject.dataset.rejectUser));
+  });
+}
+
+async function approveUserById(userId) {
+  const user = [...state.users, ...state.pendingUsers].find(u => u.id === userId);
+  if (!user) return;
+
+  if (!window.confirm(`Aprovar o acesso de ${user.nome}?`)) return;
+
+  try {
+    const data = await api(`/usuarios/${userId}/aprovar`, { method: "PATCH" });
+    toast(data?.message || "Usuário aprovado.", "success");
+    await carregarDados();
+    navigate("users");
+  } catch (e) {
+    toast(e.message || "Erro ao aprovar usuário.", "error");
+  }
+}
+
+async function rejectUserById(userId) {
+  const user = [...state.users, ...state.pendingUsers].find(u => u.id === userId);
+  if (!user) return;
+
+  if (!window.confirm(`Rejeitar o cadastro de ${user.nome}? Ele não poderá acessar o sistema.`)) return;
+
+  try {
+    await api(`/usuarios/${userId}/rejeitar`, { method: "PATCH" });
+    toast("Cadastro rejeitado.", "success");
+    await carregarDados();
+    navigate("users");
+  } catch (e) {
+    toast(e.message || "Erro ao rejeitar usuário.", "error");
+  }
 }
 
 async function deleteUserById(userId) {
@@ -4247,6 +4379,82 @@ $("#togglePassword").addEventListener("click", () => {
 $("#forgotPasswordLink")?.addEventListener("click", (e) => {
   e.preventDefault();
   toast("Solicite a redefinição de senha ao Administrador ou RH.", "");
+});
+
+function openRegisterModal() {
+  openModal({
+    title: "Criar conta",
+    content: `
+      <form id="registerForm" novalidate>
+        <label class="field">
+          <span>Nome completo</span>
+          <input id="registerName" type="text" placeholder="Seu nome completo" required autocomplete="name" />
+        </label>
+        <label class="field">
+          <span>E-mail</span>
+          <input id="registerEmail" type="email" placeholder="seu.usuario@saude.gov.br" required autocomplete="username" />
+        </label>
+        <label class="field">
+          <span>Senha</span>
+          <input id="registerPassword" type="password" placeholder="Mínimo de 8 caracteres" required minlength="8" autocomplete="new-password" />
+        </label>
+        <label class="field">
+          <span>Confirmar senha</span>
+          <input id="registerPasswordConfirm" type="password" placeholder="Repita a senha" required minlength="8" autocomplete="new-password" />
+        </label>
+        <p class="muted" style="font-size:12px;margin-top:4px;">
+          Após criar a conta, aguarde a aprovação do RH ou da administração. Você só
+          conseguirá acessar o sistema depois que seu cadastro for aprovado.
+        </p>
+      </form>
+    `,
+    actions: `
+      <button type="button" class="btn btn--ghost" data-modal-close>Cancelar</button>
+      <button type="button" class="btn btn--primary" id="registerSubmitBtn">Criar conta</button>
+    `
+  });
+
+  $("#registerSubmitBtn").addEventListener("click", async () => {
+    const name = $("#registerName").value.trim();
+    const email = $("#registerEmail").value.trim();
+    const password = $("#registerPassword").value;
+    const confirm = $("#registerPasswordConfirm").value;
+
+    if (!name || !email || !password) {
+      toast("Preencha todos os campos.", "error");
+      return;
+    }
+    if (password.length < 8) {
+      toast("A senha deve ter pelo menos 8 caracteres.", "error");
+      return;
+    }
+    if (password !== confirm) {
+      toast("As senhas não conferem.", "error");
+      return;
+    }
+
+    const btn = $("#registerSubmitBtn");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Criando...";
+
+    try {
+      const data = await registrarConta(name, email, password);
+      closeModal();
+      toast(data.message || "Conta criada. Aguarde a aprovação do RH ou da administração.", "success");
+    } catch (e) {
+      toast(e.message || "Não foi possível criar a conta.", "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+}
+
+$("#openRegisterBtn")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  openRegisterModal();
 });
 
 $("#logoutBtn").addEventListener("click", logout);

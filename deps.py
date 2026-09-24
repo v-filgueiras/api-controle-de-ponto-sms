@@ -52,6 +52,12 @@ def get_current_user(
             detail="Usuário inativo.",
         )
 
+    if user.approval_status != "aprovado":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seu cadastro ainda não foi aprovado pelo RH ou administração.",
+        )
+
     return user
 
 

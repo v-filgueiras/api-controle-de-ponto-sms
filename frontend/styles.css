@@ -725,6 +725,34 @@ input:focus, select:focus, textarea:focus {
 
 }
 
+.login-register-hint {
+
+  margin-top: 18px;
+
+  padding-top: 16px;
+
+  border-top: 1px solid rgba(120, 134, 154, 0.18);
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 6px;
+
+}
+
+.login-register-hint span {
+
+  font-size: 12px;
+
+  color: #77869a;
+
+  white-space: nowrap;
+
+}
+
 .login-options {
 
   margin-top: 16px;

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
@@ -115,22 +117,101 @@ def listar_usuarios(
     db: Session = Depends(get_db),
     actor: Users = Depends(require_role("admin", "rh")),
 ):
-    query = db.query(
-        Users.id,
-        Users.name,
-        Users.email,
-        Users.perfil,
-        Users.unit_id,
-        Users.status,
-        Users.created_at,
-        Users.updated_at,
-    )
+    query = db.query(Users)
 
     # O RH só precisa visualizar coordenadores.
     if actor.perfil == "rh":
         query = query.filter(Users.perfil == "coordinator")
 
     return query.order_by(Users.name.asc()).all()
+
+
+# IMPORTANTE: esta rota precisa vir ANTES de "/{user_id}", senão o FastAPI
+# tenta interpretar "pendentes" como um user_id e a rota nunca é alcançada.
+@router.get("/pendentes", response_model=list[UserOut])
+def listar_usuarios_pendentes(
+    db: Session = Depends(get_db),
+    actor: Users = Depends(require_role("admin", "rh")),
+):
+    """Cadastros aguardando aprovação do RH/administração para acessar o sistema."""
+    query = db.query(Users).filter(Users.approval_status == "pendente")
+
+    if actor.perfil == "rh":
+        query = query.filter(Users.perfil == "coordinator")
+
+    return query.order_by(Users.created_at.asc()).all()
+
+
+@router.patch("/{user_id}/aprovar")
+def aprovar_usuario(
+    user_id: int,
+    db: Session = Depends(get_db),
+    actor: Users = Depends(require_role("admin", "rh")),
+):
+    user = db.query(Users).filter(Users.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    validar_gerenciamento_de_coordenador(actor, user)
+
+    if user.approval_status == "aprovado":
+        raise HTTPException(status_code=409, detail="Este usuário já está aprovado.")
+
+    user.approval_status = "aprovado"
+    user.approved_by_id = actor.id
+    user.approved_at = datetime.now()
+
+    registrar_acao_administrativa(
+        db,
+        actor,
+        f"Aprovou o acesso de: {user.name} ({user.perfil})",
+        user.unit_id,
+    )
+
+    db.commit()
+
+    return {
+        "message": (
+            "Usuário aprovado."
+            + (
+                " Não esqueça de vincular o coordenador a uma unidade."
+                if user.perfil == "coordinator" and not user.unit_id
+                else " Ele já pode acessar o sistema."
+            )
+        )
+    }
+
+
+@router.patch("/{user_id}/rejeitar")
+def rejeitar_usuario(
+    user_id: int,
+    db: Session = Depends(get_db),
+    actor: Users = Depends(require_role("admin", "rh")),
+):
+    user = db.query(Users).filter(Users.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    validar_gerenciamento_de_coordenador(actor, user)
+
+    if user.approval_status != "pendente":
+        raise HTTPException(status_code=409, detail="Esta solicitação de cadastro já foi decidida.")
+
+    user.approval_status = "rejeitado"
+    user.status = False
+    user.approved_by_id = actor.id
+    user.approved_at = datetime.now()
+
+    registrar_acao_administrativa(
+        db,
+        actor,
+        f"Rejeitou o cadastro de: {user.name} ({user.perfil})",
+        user.unit_id,
+    )
+
+    db.commit()
+
+    return {"message": "Cadastro rejeitado. O usuário não poderá acessar o sistema."}
 
 
 @router.post("/me/foto")
@@ -253,6 +334,8 @@ def criar_usuario(
         perfil=payload.perfil,
         unit_id=payload.unit_id,
         status=True,
+        # Criado por um admin: já entra aprovado (o admin é o próprio aprovador).
+        approval_status="aprovado",
     )
     db.add(user)
     db.commit()

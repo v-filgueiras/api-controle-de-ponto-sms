@@ -15,6 +15,7 @@ from models import (
 )
 
 from routes.auth import router as auth_router
+from routes.auth_extra import router as auth_extra_router
 from routes.users import router as users_router
 from routes.units import router as units_router
 from routes.fechamentos import router as fechamentos_router
@@ -46,6 +47,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
+app.include_router(auth_extra_router)
 app.include_router(users_router)
 app.include_router(units_router)
 app.include_router(fechamentos_router)

@@ -1,32 +1,36 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
-Perfil = Literal["admin", "rh", "coordinator"]
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     email: EmailStr
-    password: str = Field(min_length=8)
-    perfil: Perfil
-    unit_id: Optional[int] = None  # obrigatório apenas quando perfil == "coordinator"
+    password: str = Field(min_length=8, max_length=128)
+    perfil: Literal["admin", "rh", "coordinator"]
+    unit_id: int | None = None
+
 
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    perfil: Optional[Perfil] = None
-    unit_id: Optional[int] = None
-    status: Optional[bool] = None
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    email: EmailStr | None = None
+    perfil: Literal["admin", "rh", "coordinator"] | None = None
+    unit_id: int | None = None
+    status: bool | None = None
+
 
 class UserOut(BaseModel):
     id: int
     name: str
     email: EmailStr
     perfil: str
-    unit_id: Optional[int]
+    unit_id: int | None
     status: bool
-    created_at: datetime
-    updated_at: datetime
+    approval_status: str
+    approved_by_id: int | None = None
+    approved_at: datetime | None = None
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True
