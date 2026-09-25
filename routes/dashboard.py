@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from database.connect import get_db
 from deps import require_role
-from models import Fechamentos, PointRows, Units, Users
+from models import Fechamentos, Units, Users
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 

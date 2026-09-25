@@ -13,7 +13,12 @@ from models import Users
 # Se sua rota de login tiver outro caminho, altere aqui.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "troque-esta-chave-em-producao")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY não configurada. Defina a variável de ambiente SECRET_KEY "
+        "antes de iniciar o sistema (nunca use um valor padrão em produção)."
+    )
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 

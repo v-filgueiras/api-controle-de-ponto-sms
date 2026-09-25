@@ -69,10 +69,10 @@ def _evento(tipo: str, titulo: str, descricao: str, referencia: str | None = Non
 
 
 def _checar_acesso(user: Users, unit_id: int):
+    # Auditoria é exclusiva de admin/rh, que enxergam todas as unidades —
+    # por isso não há checagem adicional por unit_id aqui.
     if user.perfil not in ("admin", "rh"):
         raise HTTPException(status_code=403, detail="A auditoria está disponível para Administrador e RH.")
-    if user.perfil == "coordinator" and user.unit_id != unit_id:
-        raise HTTPException(status_code=403, detail="Você só pode acessar a própria unidade.")
 
 
 @router.get("/fechamentos")

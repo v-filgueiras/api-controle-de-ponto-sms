@@ -1,5 +1,5 @@
 import os
-import shutil
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -15,6 +15,11 @@ from schemas.fechamentos import DecisionIn, FechamentoOut, FechamentoRowsUpdate,
 router = APIRouter(tags=["fechamentos"])
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
+
+# Limite de tamanho para o documento de fechamento (PDF assinado).
+MAX_DOCUMENT_SIZE = 15 * 1024 * 1024  # 15 MB
+
+PDF_MAGIC_BYTES = b"%PDF-"
 
 MESES = [
     "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
@@ -97,7 +102,7 @@ def atualizar_linhas(
 
 
 @router.post("/fechamentos/{fechamento_id}/documento", response_model=FechamentoOut)
-def enviar_documento(
+async def enviar_documento(
     fechamento_id: int,
     file: UploadFile,
     db: Session = Depends(get_db),
@@ -112,17 +117,38 @@ def enviar_documento(
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=422, detail="Apenas arquivos PDF são aceitos.")
 
+    conteudo = await file.read(MAX_DOCUMENT_SIZE + 1)
+
+    if not conteudo:
+        raise HTTPException(status_code=422, detail="O arquivo enviado está vazio.")
+
+    if len(conteudo) > MAX_DOCUMENT_SIZE:
+        raise HTTPException(status_code=413, detail="O documento deve ter no máximo 15 MB.")
+
+    if not conteudo.startswith(PDF_MAGIC_BYTES):
+        raise HTTPException(
+            status_code=422,
+            detail="O conteúdo do arquivo não corresponde a um PDF válido.",
+        )
+
+    # Nome original só é preservado como metadado (exibição/download). O
+    # nome físico em disco é sempre gerado pelo servidor para evitar path
+    # traversal ou sobrescrita de arquivos a partir de um filename malicioso
+    # vindo do cliente.
+    nome_original = os.path.basename(file.filename or "documento.pdf")
+    nome_seguro = f"{uuid.uuid4().hex}.pdf"
+
     pasta = os.path.join(UPLOAD_DIR, str(fechamento.unit_id), fechamento.competence.replace("/", "-"))
     os.makedirs(pasta, exist_ok=True)
-    caminho = os.path.join(pasta, file.filename)
+    caminho = os.path.join(pasta, nome_seguro)
     with open(caminho, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(conteudo)
 
     documento = Documents(
-        filename=file.filename,
+        filename=nome_original,
         storage_path=caminho,
         mime_type=file.content_type,
-        size_bytes=os.path.getsize(caminho),
+        size_bytes=len(conteudo),
         uploaded_by_id=user.id,
     )
     db.add(documento)
