@@ -1,3 +1,5 @@
+BASIC STRUCTURE OF THE DATABASE
+
 CREATE TABLE public.units (
   id integer NOT NULL DEFAULT nextval('units_id_seq'::regclass),
   name character varying NOT NULL UNIQUE,
