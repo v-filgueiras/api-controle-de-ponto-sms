@@ -4,6 +4,72 @@ const USER_KEY = "sms-ponto-user";
 
 let currentProfilePhotoUrl = null;
 
+// Ícones SVG (Lucide, traço 2px). Use ic("nome") em qualquer template.
+// Também aceita os glifos antigos (ex.: ic("✓")), que viram o ícone equivalente.
+const ICON_PATHS = {
+  "home": "<path d=\"m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/><polyline points=\"9 22 9 12 15 12 15 22\"/>",
+  "clipboard": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M12 11h4\"/><path d=\"M12 16h4\"/><path d=\"M8 11h.01\"/><path d=\"M8 16h.01\"/>",
+  "mail": "<rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/><path d=\"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7\"/>",
+  "history": "<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l4 2\"/>",
+  "user": "<path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\"/><circle cx=\"12\" cy=\"7\" r=\"4\"/>",
+  "users": "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>",
+  "check-circle": "<path d=\"M22 11.08V12a10 10 0 1 1-5.93-9.14\"/><path d=\"m9 11 3 3L22 4\"/>",
+  "building": "<rect width=\"16\" height=\"20\" x=\"4\" y=\"2\" rx=\"2\"/><path d=\"M9 22v-4h6v4\"/><path d=\"M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01\"/>",
+  "shield": "<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/><path d=\"m9 12 2 2 4-4\"/>",
+  "clock": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/>",
+  "alert-triangle": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>",
+  "alert": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>",
+  "check": "<path d=\"M20 6 9 17l-5-5\"/>",
+  "x": "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>",
+  "pencil": "<path d=\"M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z\"/><path d=\"m15 5 4 4\"/>",
+  "bell": "<path d=\"M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9\"/><path d=\"M10.3 21a1.94 1.94 0 0 0 3.4 0\"/>",
+  "search": "<circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/>",
+  "menu": "<line x1=\"4\" x2=\"20\" y1=\"12\" y2=\"12\"/><line x1=\"4\" x2=\"20\" y1=\"6\" y2=\"6\"/><line x1=\"4\" x2=\"20\" y1=\"18\" y2=\"18\"/>",
+  "download": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" x2=\"12\" y1=\"15\" y2=\"3\"/>",
+  "upload": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"17 8 12 3 7 8\"/><line x1=\"12\" x2=\"12\" y1=\"3\" y2=\"15\"/>",
+  "arrow-left": "<path d=\"m12 19-7-7 7-7\"/><path d=\"M19 12H5\"/>",
+  "grid": "<rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\"/>",
+  "list": "<line x1=\"8\" x2=\"21\" y1=\"6\" y2=\"6\"/><line x1=\"8\" x2=\"21\" y1=\"12\" y2=\"12\"/><line x1=\"8\" x2=\"21\" y1=\"18\" y2=\"18\"/><line x1=\"3\" x2=\"3.01\" y1=\"6\" y2=\"6\"/><line x1=\"3\" x2=\"3.01\" y1=\"12\" y2=\"12\"/><line x1=\"3\" x2=\"3.01\" y1=\"18\" y2=\"18\"/>",
+  "calendar": "<path d=\"M8 2v4\"/><path d=\"M16 2v4\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M3 10h18\"/>",
+  "dashed": "<circle cx=\"12\" cy=\"12\" r=\"10\" stroke-dasharray=\"3 3.2\"/>",
+  "rotate": "<path d=\"M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/>",
+  "sun": "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41\"/>",
+  "moon": "<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>",
+  "plus": '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  "file-text": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  "dot": "<circle cx=\"12\" cy=\"12\" r=\"2\"/>"
+};
+const ICON_GLYPHS = {"⌂": "home", "▦": "grid", "✉": "mail", "↺": "history", "○": "user", "♙": "users", "⌘": "building", "✓": "check", "◷": "clock", "△": "alert-triangle", "!": "alert", "✕": "x", "×": "x", "✎": "pencil", "◌": "dashed", "↻": "rotate", "↑": "upload", "↓": "download", "←": "arrow-left", "⌕": "search", "☰": "list", "▤": "calendar", "♢": "bell", "•": "dot"};
+
+function ic(name, extra = "") {
+  const key = ICON_PATHS[name] ? name : ICON_GLYPHS[name];
+  if (!key) return name ?? "";
+  return `<svg class="ic ${extra}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[key]}</svg>`;
+}
+
+
+
+// Tema: "light" (padrão) ou "dark". Só afeta a área logada.
+const THEME_KEY = "sms-ponto-theme";
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem(THEME_KEY, theme); } catch (_) {}
+  const btn = document.querySelector("#themeBtn");
+  if (btn) {
+    btn.setAttribute("aria-pressed", String(theme === "dark"));
+    btn.title = theme === "dark" ? "Usar tema claro" : "Usar tema escuro";
+  }
+}
+
+function initTheme() {
+  let saved = "light";
+  try { saved = localStorage.getItem(THEME_KEY) || "light"; } catch (_) {}
+  applyTheme(saved === "dark" ? "dark" : "light");
+  document.querySelector("#themeBtn")?.addEventListener("click", () => {
+    applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+  });
+}
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -458,11 +524,11 @@ const roles = {
     user: "Coord. Nova Três Lagoas",
     initials: "CN",
     nav: [
-      ["dashboard", "⌂", "Painel"],
-      ["point", "▦", "Fechamento de ponto"],
-      ["messages", "✉", "Mensagens"],
-      ["history", "↺", "Histórico"],
-      ["profile", "○", "Meu perfil"]
+      ["dashboard", "home", "Painel"],
+      ["point", "clipboard", "Fechamento de ponto"],
+      ["messages", "mail", "Mensagens"],
+      ["history", "history", "Histórico"],
+      ["profile", "user", "Meu perfil"]
     ]
   },
   rh: {
@@ -471,13 +537,13 @@ const roles = {
     user: "Responsável RH",
     initials: "RH",
     nav: [
-      ["dashboard", "⌂", "Painel"],
-      ["approvals", "✓", "Aprovações"],
-      ["messages", "✉", "Mensagens"],
-      ["units", "⌘", "Unidades"],
-      ["users", "♙", "Coordenadores"],
-      ["history", "↺", "Histórico"],
-      ["profile", "○", "Meu perfil"]
+      ["dashboard", "home", "Painel"],
+      ["approvals", "check-circle", "Aprovações"],
+      ["messages", "mail", "Mensagens"],
+      ["units", "building", "Unidades"],
+      ["users", "users", "Coordenadores"],
+      ["history", "history", "Histórico"],
+      ["profile", "user", "Meu perfil"]
     ]
   },
   admin: {
@@ -486,11 +552,11 @@ const roles = {
     user: "Administrador do Sistema",
     initials: "AD",
     nav: [
-      ["dashboard", "⌂", "Painel"],
-      ["users", "♙", "Usuários e hierarquia"],
-      ["units", "⌘", "Unidades"],
-      ["history", "↺", "Meu histórico"],
-      ["profile", "○", "Meu perfil"]
+      ["dashboard", "home", "Painel"],
+      ["users", "users", "Usuários e hierarquia"],
+      ["units", "building", "Unidades"],
+      ["history", "history", "Meu histórico"],
+      ["profile", "user", "Meu perfil"]
     ]
   }
 };
@@ -573,7 +639,7 @@ function deadlineBannerHtml() {
 
     return `
       <div class="deadline-banner deadline-banner--${tone}">
-        <div class="deadline-banner__icon">${icon}</div>
+        <div class="deadline-banner__icon">${ic(icon)}</div>
         <div class="deadline-banner__body">
           <strong>${worst.days < 0 ? "Prazo vencido" : "Lembrete de prazo"}</strong>
           <p>${msg} Envie o fechamento o quanto antes para evitar atraso.</p>
@@ -588,7 +654,7 @@ function deadlineBannerHtml() {
 
   return `
     <div class="deadline-banner deadline-banner--${tone}">
-      <div class="deadline-banner__icon">${icon}</div>
+      <div class="deadline-banner__icon">${ic(icon)}</div>
       <div class="deadline-banner__body">
         <strong>${relevant.length} unidade(s) perto do prazo ou atrasada(s)</strong>
         <ul>
@@ -744,13 +810,13 @@ function renderNotifications() {
   badge.classList.toggle("hidden", unread.length === 0);
 
   if (!notifications.length) {
-    list.innerHTML = `<div class="notif-empty">Nenhuma notificação por aqui.</div>`;
+    list.innerHTML = `<div class="notif-empty">${ic("bell")}<span>Nenhuma notificação por aqui.</span></div>`;
     return;
   }
 
   list.innerHTML = notifications.map(n => `
     <button type="button" class="notif-item ${!read.has(n.id) ? "notif-item--unread" : ""}" data-notif-id="${n.id}" data-notif-page="${n.page || ""}" data-notif-unit="${n.params?.unitId ?? ""}">
-      <div class="notif-item__icon notif-item__icon--${n.tone}">${n.icon}</div>
+      <div class="notif-item__icon notif-item__icon--${n.tone}">${ic(n.icon)}</div>
       <div class="notif-item__body">
         <strong>${escapeHtml(n.title)}</strong>
         <p>${escapeHtml(n.message)}</p>
@@ -997,7 +1063,7 @@ async function openChatThread(unitId) {
   setChatComposerEnabled(false);
 
   const box = $("#chatMsgs");
-  if (box) box.innerHTML = `<div class="chat-empty">Carregando…</div>`;
+  if (box) box.innerHTML = `<div class="chat-empty"><span class="spinner"></span>Carregando…</div>`;
 
   try {
     const msgs = await api(`/unidades/${unitId}/mensagens`);
@@ -1132,7 +1198,7 @@ async function initMessagesPage(requestedUnitId) {
   }
 
   // RH
-  $("#chatConvList").innerHTML = `<div class="chat-empty">Carregando…</div>`;
+  $("#chatConvList").innerHTML = `<div class="chat-empty"><span class="spinner"></span>Carregando…</div>`;
   await refreshChatSummary();
   if (state.currentPage !== "messages") return;
 
@@ -1164,7 +1230,7 @@ function openModal({ title, content, actions = "" }) {
       <div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
         <div class="modal-head">
           <h3>${title}</h3>
-          <button class="close-btn" data-modal-close>×</button>
+          <button class="close-btn" data-modal-close aria-label="Fechar">${ic("x")}</button>
         </div>
         <div class="modal-body">${content}</div>
         ${actions ? `<div class="modal-foot">${actions}</div>` : ""}
@@ -1249,7 +1315,7 @@ function logout() {
 function renderNav() {
   $("#mainNav").innerHTML = state.user.nav.map(([page, icon, label]) => `
     <button data-page="${page}">
-      <span class="nav-icon">${icon}</span>
+      <span class="nav-icon">${ic(icon)}</span>
       <span>${label}</span>
       ${page === "messages" ? `<span class="nav-badge hidden" id="navMsgBadge">0</span>` : ""}
     </button>
@@ -1343,22 +1409,22 @@ function coordinatorDashboard() {
 
     <div class="grid grid--4">
       <div class="card metric">
-        <div class="metric-top"><span>Competência</span><span class="metric-icon">◷</span></div>
+        <div class="metric-top"><span>Competência</span><span class="metric-icon">${ic("◷")}</span></div>
         <strong>${unit.competence}</strong>
         <small>11/08 a 10/09</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Servidores</span><span class="metric-icon">♙</span></div>
+        <div class="metric-top"><span>Servidores</span><span class="metric-icon">${ic("♙")}</span></div>
         <strong>${unit.rows.length}</strong>
         <small>na unidade selecionada</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Preenchimento</span><span class="metric-icon">✓</span></div>
+        <div class="metric-top"><span>Preenchimento</span><span class="metric-icon">${ic("✓")}</span></div>
         <strong>${percent}%</strong>
         <small>campos obrigatórios</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Situação</span><span class="metric-icon">!</span></div>
+        <div class="metric-top"><span>Situação</span><span class="metric-icon">${ic("!")}</span></div>
         <strong style="font-size:18px">${statusMeta[unit.status]?.[0] || unit.status}</strong>
         <small>${unit.status === "correcao" || unit.status === "rejeitado" ? "revise e reenvie" : "aguardando documento assinado"}</small>
       </div>
@@ -1387,21 +1453,21 @@ function coordinatorDashboard() {
           <div class="separator"></div>
           <div class="timeline">
             <div class="timeline-item ${step1Done ? "done" : ""}">
-              <div class="timeline-dot">✓</div>
+              <div class="timeline-dot">${ic("check")}</div>
               <div class="timeline-content">
                 <strong>Fechamento iniciado</strong>
                 <p>Rascunho criado para a competência ${unit.competence}.</p>
               </div>
             </div>
             <div class="timeline-item ${step2Done ? "done" : step2Current ? "current" : ""}">
-              <div class="timeline-dot">${step2Done ? "✓" : "2"}</div>
+              <div class="timeline-dot">${step2Done ? ic("check") : "2"}</div>
               <div class="timeline-content">
                 <strong>Preenchimento e assinatura</strong>
                 <p>Revise os dados, exporte/assine o documento e faça o upload do PDF.</p>
               </div>
             </div>
             <div class="timeline-item ${step3Done ? "done" : step3Current ? "current" : ""}">
-              <div class="timeline-dot">${step3Done ? "✓" : "3"}</div>
+              <div class="timeline-dot">${step3Done ? ic("check") : "3"}</div>
               <div class="timeline-content">
                 <strong>Análise do RH</strong>
                 <p>O fechamento ficará bloqueado para edição após o envio.</p>
@@ -1509,32 +1575,32 @@ function rhDashboard() {
 
     <div class="grid rh-metrics">
       <div class="card metric">
-        <div class="metric-top"><span>Servidores</span><span class="metric-icon">♙</span></div>
+        <div class="metric-top"><span>Servidores</span><span class="metric-icon">${ic("♙")}</span></div>
         <strong>${fmt(t.employees)}</strong>
         <small>registros na competência</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Faltas</span><span class="metric-icon">!</span></div>
+        <div class="metric-top"><span>Faltas</span><span class="metric-icon">${ic("!")}</span></div>
         <strong>${fmt(t.absences)}</strong>
         <small>total informado</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Atestados</span><span class="metric-icon">+</span></div>
+        <div class="metric-top"><span>Atestados</span><span class="metric-icon">${ic("file-text")}</span></div>
         <strong>${fmt(t.medical_certificates)}</strong>
         <small>total informado</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Horas extras</span><span class="metric-icon">◷</span></div>
+        <div class="metric-top"><span>Horas extras</span><span class="metric-icon">${ic("◷")}</span></div>
         <strong>${fmt(t.overtime)}</strong>
         <small>HE acumulada</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Banco de horas</span><span class="metric-icon">↺</span></div>
+        <div class="metric-top"><span>Banco de horas</span><span class="metric-icon">${ic("↺")}</span></div>
         <strong>${fmt(t.time_bank)}</strong>
         <small>BH acumulado</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Pendentes</span><span class="metric-icon">✓</span></div>
+        <div class="metric-top"><span>Pendentes</span><span class="metric-icon">${ic("✓")}</span></div>
         <strong>${fmt(t.pending)}</strong>
         <small>aguardando análise do RH</small>
       </div>
@@ -1604,22 +1670,22 @@ function adminDashboard() {
 
     <div class="grid grid--4">
       <div class="card metric">
-        <div class="metric-top"><span>Usuários ativos</span><span class="metric-icon">♙</span></div>
+        <div class="metric-top"><span>Usuários ativos</span><span class="metric-icon">${ic("♙")}</span></div>
         <strong>${state.users.length}</strong>
         <small>todos os perfis</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Coordenadores</span><span class="metric-icon">⌘</span></div>
+        <div class="metric-top"><span>Coordenadores</span><span class="metric-icon">${ic("users")}</span></div>
         <strong>${state.users.filter(u => u.perfil === "Coordenador").length}</strong>
         <small>com vínculo de unidade</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Unidades</span><span class="metric-icon">▦</span></div>
+        <div class="metric-top"><span>Unidades</span><span class="metric-icon">${ic("building")}</span></div>
         <strong>${state.units.length}</strong>
         <small>cadastradas</small>
       </div>
       <div class="card metric">
-        <div class="metric-top"><span>Perfis de acesso</span><span class="metric-icon">⊚</span></div>
+        <div class="metric-top"><span>Perfis de acesso</span><span class="metric-icon">${ic("⊚")}</span></div>
         <strong>3</strong>
         <small>Administrador, RH e Coordenador</small>
       </div>
@@ -1800,7 +1866,7 @@ function pointView() {
           <h3>Servidores da unidade</h3>
           <p>Todos os campos devem ser informados. Quando não houver ocorrência, use 0; em observação, use "Sem observação".</p>
         </div>
-        <button id="addRowBtn" class="btn btn--secondary">+ Adicionar servidor</button>
+        <button id="addRowBtn" class="btn btn--secondary">${ic("plus")} Adicionar servidor</button>
       </div>
       <div class="table-wrap">
         <table class="point-table">
@@ -1901,7 +1967,7 @@ function pointRowsHtml() {
         </select>
       </td>
       ${["dt","bh","he","an","gr","ins","at","faltas"].map(k => `<td><input class="cell-sm" type="number" min="0" step="1" data-key="${k}" value="${escapeHtml(r[k])}" required /></td>`).join("")}
-      <td><button class="remove-row" data-remove-row="${i}" title="Remover">×</button></td>
+      <td><button class="remove-row" data-remove-row="${i}" title="Remover" aria-label="Remover linha">${ic("x")}</button></td>
       <td><input class="cell-obs" data-key="observacao" value="${escapeHtml(r.observacao)}" placeholder="Sem observação" required /></td>
     </tr>
   `).join("");
@@ -1938,7 +2004,7 @@ function checklistHtml() {
   const fileOk = !!state.uploadedFile;
   const item = (ok, text) => `
     <div style="display:flex;align-items:center;gap:9px;padding:8px 0;font-size:12px">
-      <span class="timeline-dot" style="${ok ? "background:var(--success-soft);color:var(--success)" : ""}">${ok ? "✓" : "•"}</span>
+      <span class="timeline-dot" style="${ok ? "background:var(--success-soft);color:var(--success)" : ""}">${ok ? ic("check") : "•"}</span>
       <span style="color:${ok ? "#276d53" : "#637083"}">${text}</span>
     </div>
   `;
@@ -2292,7 +2358,7 @@ function reviewView(unitId) {
         <p>Confira os dados informados pelo coordenador e o documento assinado antes de registrar a decisão.</p>
       </div>
       <div class="actions">
-        <button class="btn btn--outline" data-go="approvals">← Voltar</button>
+        <button class="btn btn--outline" data-go="approvals">${ic("arrow-left")} Voltar</button>
       </div>
     </div>
 
@@ -2418,8 +2484,8 @@ function unitsView() {
         <h1>Unidades de saúde</h1>
       </div>
       <div class="head-v5__actions">
-        <button class="btn btn--outline" id="unitsExportBtn">↓ Exportar CSV</button>
-        ${isAdmin ? `<button class="btn btn--primary" id="newUnitBtn">+ Nova unidade</button>` : ""}
+        <button class="btn btn--outline" id="unitsExportBtn">${ic("download")} Exportar CSV</button>
+        ${isAdmin ? `<button class="btn btn--primary" id="newUnitBtn">${ic("plus")} Nova unidade</button>` : ""}
       </div>
     </div>
 
@@ -2428,13 +2494,13 @@ function unitsView() {
     <section class="panel-v5">
       <div class="panel-v5__toolbar">
         <div class="search-v5">
-          <span aria-hidden="true">⌕</span>
+          <span aria-hidden="true">${ic("search")}</span>
           <input id="unitSearch" type="search" placeholder="Buscar unidade, coordenador ou competência..." value="${escapeHtml(unitsUi.query)}" />
         </div>
 
         <div class="viewtoggle-v5" role="group" aria-label="Modo de exibição">
-          <button type="button" data-units-mode="grid" class="${unitsUi.mode === "grid" ? "is-active" : ""}">▦ Cards</button>
-          <button type="button" data-units-mode="table" class="${unitsUi.mode === "table" ? "is-active" : ""}">☰ Tabela</button>
+          <button type="button" data-units-mode="grid" class="${unitsUi.mode === "grid" ? "is-active" : ""}">${ic("grid")} Cards</button>
+          <button type="button" data-units-mode="table" class="${unitsUi.mode === "table" ? "is-active" : ""}">${ic("list")} Tabela</button>
         </div>
       </div>
 
@@ -2453,9 +2519,9 @@ function unitsStats() {
   const rate = all.length ? Math.round((approved / all.length) * 100) : 0;
 
   const cards = [
-    ["Unidades ativas", all.length, `${servers} servidor(es) no total`, "primary", "▦"],
-    ["Aguardando RH", count("pendente"), "fechamentos em análise", "warning", "◷"],
-    ["Aprovadas", approved, `${rate}% da competência concluída`, "success", "✓"],
+    ["Unidades ativas", all.length, `${servers} servidor(es) no total`, "primary", "building"],
+    ["Aguardando RH", count("pendente"), "fechamentos em análise", "warning", "clock"],
+    ["Aprovadas", approved, `${rate}% da competência concluída`, "success", "check-circle"],
     ["Pendências", count("correcao") + count("rejeitado") + count("nao_enviado"), "correções, rejeições e não enviados", "danger", "!"]
   ];
 
@@ -2463,7 +2529,7 @@ function unitsStats() {
     <div class="stats-v5">
       ${cards.map(([label, value, hint, tone, icon]) => `
         <article class="stat-v5 stat-v5--${tone}">
-          <div class="stat-v5__icon" aria-hidden="true">${icon}</div>
+          <div class="stat-v5__icon" aria-hidden="true">${ic(icon)}</div>
           <div class="stat-v5__body">
             <span>${label}</span>
             <strong>${value}</strong>
@@ -2493,7 +2559,7 @@ function unitsResult() {
   if (!list.length) {
     return `
       <div class="empty-v5">
-        <div class="empty-v5__mark" aria-hidden="true">⌕</div>
+        <div class="empty-v5__mark" aria-hidden="true">${ic("search")}</div>
         <strong>Nenhuma unidade encontrada</strong>
         <p>Ajuste a busca ou selecione outro status para ver os resultados.</p>
       </div>
@@ -2690,12 +2756,12 @@ function downloadCsv(filename, rows) {
 const auditUi = { query: "", filter: "todos" };
 
 const AUDIT_ICONS = {
-  aprovado: "✓",
-  pendente: "↑",
-  correcao: "↻",
-  rejeitado: "✕",
-  rascunho: "✎",
-  nao_enviado: "◌"
+  aprovado: "check",
+  pendente: "upload",
+  correcao: "rotate",
+  rejeitado: "x",
+  rascunho: "pencil",
+  nao_enviado: "dashed"
 };
 
 function auditTone(status) {
@@ -2733,7 +2799,7 @@ function historyView() {
         <p>${desc}</p>
       </div>
       <div class="head-v5__actions">
-        <button class="btn btn--outline" id="auditExportBtn">↓ Exportar CSV</button>
+        <button class="btn btn--outline" id="auditExportBtn">${ic("download")} Exportar CSV</button>
       </div>
     </div>
 
@@ -2742,7 +2808,7 @@ function historyView() {
     <section class="panel-v5">
       <div class="panel-v5__toolbar">
         <div class="search-v5">
-          <span aria-hidden="true">⌕</span>
+          <span aria-hidden="true">${ic("search")}</span>
           <input id="auditSearch" type="search" placeholder="Buscar por usuário, ação, unidade ou competência..." value="${escapeHtml(auditUi.query)}" />
         </div>
         <span class="panel-v5__count" id="auditCount">${auditFiltered().length} evento(s)</span>
@@ -2761,17 +2827,17 @@ function auditStats() {
   const units = new Set(all.map(h => h.unit).filter(u => u && u !== "—"));
 
   const cards = [
-    ["Eventos registrados", all.length, "no período disponível", "primary", "↺"],
-    ["Aprovações", by("aprovado"), "decisões favoráveis do RH", "success", "✓"],
-    ["Correções e rejeições", by("correcao") + by("rejeitado"), "retornaram para a unidade", "danger", "↻"],
-    ["Unidades envolvidas", units.size, "com movimentação registrada", "warning", "▦"]
+    ["Eventos registrados", all.length, "no período disponível", "primary", "history"],
+    ["Aprovações", by("aprovado"), "decisões favoráveis do RH", "success", "check-circle"],
+    ["Correções e rejeições", by("correcao") + by("rejeitado"), "retornaram para a unidade", "danger", "rotate"],
+    ["Unidades envolvidas", units.size, "com movimentação registrada", "warning", "building"]
   ];
 
   return `
     <div class="stats-v5">
       ${cards.map(([label, value, hint, tone, icon]) => `
         <article class="stat-v5 stat-v5--${tone}">
-          <div class="stat-v5__icon" aria-hidden="true">${icon}</div>
+          <div class="stat-v5__icon" aria-hidden="true">${ic(icon)}</div>
           <div class="stat-v5__body">
             <span>${label}</span>
             <strong>${value}</strong>
@@ -2814,7 +2880,7 @@ function auditResult() {
   if (!list.length) {
     return `
       <div class="empty-v5">
-        <div class="empty-v5__mark" aria-hidden="true">↺</div>
+        <div class="empty-v5__mark" aria-hidden="true">${ic("history")}</div>
         <strong>Nenhum registro encontrado</strong>
         <p>Altere o filtro ou refine a busca para visualizar os eventos.</p>
       </div>
@@ -2844,7 +2910,7 @@ function auditResult() {
           <ol class="audit-v5__list">
             ${g.items.map(h => {
               const tone = auditTone(h.status);
-              const icon = AUDIT_ICONS[h.status] || "•";
+              const icon = ic(AUDIT_ICONS[h.status] || "dot");
               return `
                 <li class="audit-v5__item audit-v5__item--${tone}">
                   <div class="audit-v5__time">${escapeHtml(h.time || "--:--")}</div>
@@ -2855,9 +2921,9 @@ function auditResult() {
                       ${statusMeta[h.status] ? badge(h.status) : `<span class="badge badge--info">Registrado</span>`}
                     </div>
                     <div class="audit-v5__tags">
-                      <span class="tag-v5"><i aria-hidden="true">○</i>${escapeHtml(h.user)}</span>
-                      <span class="tag-v5"><i aria-hidden="true">▦</i>${escapeHtml(h.unit)}</span>
-                      <span class="tag-v5"><i aria-hidden="true">▤</i>${escapeHtml(h.competence)}</span>
+                      <span class="tag-v5"><i aria-hidden="true">${ic("user")}</i>${escapeHtml(h.user)}</span>
+                      <span class="tag-v5"><i aria-hidden="true">${ic("building")}</i>${escapeHtml(h.unit)}</span>
+                      <span class="tag-v5"><i aria-hidden="true">${ic("calendar")}</i>${escapeHtml(h.competence)}</span>
                     </div>
                   </div>
                 </li>
@@ -2947,8 +3013,8 @@ function usersView() {
         <p>${description}</p>
       </div>
       <div class="head-v5__actions">
-        <button class="btn btn--outline" id="usersExportBtn">↓ Exportar CSV</button>
-        ${isAdmin ? `<button class="btn btn--primary" id="newUserBtn">+ Novo usuário</button>` : ""}
+        <button class="btn btn--outline" id="usersExportBtn">${ic("download")} Exportar CSV</button>
+        ${isAdmin ? `<button class="btn btn--primary" id="newUserBtn">${ic("plus")} Novo usuário</button>` : ""}
       </div>
     </div>
 
@@ -2979,13 +3045,13 @@ function usersView() {
     <section class="panel-v5">
       <div class="panel-v5__toolbar">
         <div class="search-v5">
-          <span aria-hidden="true">⌕</span>
+          <span aria-hidden="true">${ic("search")}</span>
           <input id="userSearch" type="search" placeholder="Buscar por nome, e-mail ou unidade..." value="${escapeHtml(usersUi.query)}" />
         </div>
 
         <div class="viewtoggle-v5" role="group" aria-label="Modo de exibição">
-          <button type="button" data-users-mode="grid" class="${usersUi.mode === "grid" ? "is-active" : ""}">▦ Cards</button>
-          <button type="button" data-users-mode="table" class="${usersUi.mode === "table" ? "is-active" : ""}">☰ Tabela</button>
+          <button type="button" data-users-mode="grid" class="${usersUi.mode === "grid" ? "is-active" : ""}">${ic("grid")} Cards</button>
+          <button type="button" data-users-mode="table" class="${usersUi.mode === "table" ? "is-active" : ""}">${ic("list")} Tabela</button>
         </div>
       </div>
 
@@ -3024,7 +3090,7 @@ function pendingUsersPanel() {
             </header>
             <div class="user-v5__meta">
               <span class="role-chip">${escapeHtml(u.perfil)}</span>
-              <span class="tag-v5"><i aria-hidden="true">▦</i>${escapeHtml(u.unidade)}</span>
+              <span class="tag-v5"><i aria-hidden="true">${ic("building")}</i>${escapeHtml(u.unidade)}</span>
             </div>
             <footer class="user-v5__foot">
               <button class="table-action" data-v5 data-approve-user="${u.id}">Aprovar</button>
@@ -3044,18 +3110,18 @@ function usersStats() {
   const semVinculo = coords.filter(u => !u.unit_id).length;
 
   const cards = [
-    ["Usuários", all.length, `${all.filter(u => u.status === "Ativo").length} ativo(s)`, "primary", "○"],
-    ["Coordenadores", coords.length, `${coords.length - semVinculo} com unidade vinculada`, "success", "▦"],
+    ["Usuários", all.length, `${all.filter(u => u.status === "Ativo").length} ativo(s)`, "primary", "users"],
+    ["Coordenadores", coords.length, `${coords.length - semVinculo} com unidade vinculada`, "success", "building"],
     ["Sem vínculo", semVinculo, "aguardando vinculação de unidade", "warning", "!"],
-    ["Aguardando aprovação", (state.pendingUsers || []).length, "cadastros com e-mail confirmado", "warning", "✓"],
-    ["RH e Administração", by("rh") + by("admin"), "acessos com escopo global", "info", "⌘"]
+    ["Aguardando aprovação", (state.pendingUsers || []).length, "cadastros aguardando decisão", "warning", "check-circle"],
+    ["RH e Administração", by("rh") + by("admin"), "acessos com escopo global", "info", "shield"]
   ];
 
   return `
     <div class="stats-v5">
       ${cards.map(([label, value, hint, tone, icon]) => `
         <article class="stat-v5 stat-v5--${tone}">
-          <div class="stat-v5__icon" aria-hidden="true">${icon}</div>
+          <div class="stat-v5__icon" aria-hidden="true">${ic(icon)}</div>
           <div class="stat-v5__body">
             <span>${label}</span>
             <strong>${value}</strong>
@@ -3131,7 +3197,7 @@ function usersResult() {
   if (!list.length) {
     return `
       <div class="empty-v5">
-        <div class="empty-v5__mark" aria-hidden="true">○</div>
+        <div class="empty-v5__mark" aria-hidden="true">${ic("user")}</div>
         <strong>Nenhum usuário encontrado</strong>
         <p>Ajuste a busca ou selecione outro perfil de acesso.</p>
       </div>
@@ -3182,7 +3248,7 @@ function usersResult() {
 
           <div class="user-v5__meta">
             <span class="role-chip">${escapeHtml(u.perfil)}</span>
-            <span class="tag-v5"><i aria-hidden="true">▦</i>${escapeHtml(u.unidade)}</span>
+            <span class="tag-v5"><i aria-hidden="true">${ic("building")}</i>${escapeHtml(u.unidade)}</span>
           </div>
 
           <footer class="user-v5__foot">${userActions(u)}</footer>
@@ -3372,7 +3438,7 @@ function profileView() {
                 type="button"
                 title="Alterar foto"
                 aria-label="Alterar foto de perfil"
-              >✎</button>
+              >${ic("pencil")}</button>
             </div>
 
             <div class="profile-v4__aside-name">
@@ -4537,6 +4603,7 @@ $("#forgotPasswordLink")?.addEventListener("click", (e) => {
 });
 
 handleEmailLinks();
+initTheme();
 
 function openRegisterModal() {
   openModal({
