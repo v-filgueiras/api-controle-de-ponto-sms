@@ -101,6 +101,12 @@ async function api(path, options = {}) {
     throw new Error(data?.detail || `Erro HTTP ${response.status}`);
   }
 
+  // Trocar a senha invalida o token antigo; o backend devolve um novo para a
+  // sessão atual continuar válida.
+  if (path === "/usuarios/me/senha" && data?.access_token) {
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+  }
+
   return data;
 }
 
@@ -4376,10 +4382,161 @@ $("#togglePassword").addEventListener("click", () => {
   p.type = p.type === "password" ? "text" : "password";
 });
 
+// Chamadas públicas (sem token): recuperação de senha e confirmação de e-mail.
+async function publicRequest(path, { method = "POST", body } = {}) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (_) {}
+
+  if (!response.ok) {
+    throw new Error(data?.detail || `Erro HTTP ${response.status}`);
+  }
+
+  return data;
+}
+
+function openForgotPasswordModal() {
+  openModal({
+    title: "Esqueci minha senha",
+    content: `
+      <form id="forgotForm" novalidate>
+        <label class="field">
+          <span>E-mail cadastrado</span>
+          <input id="forgotEmail" type="email" placeholder="seu.usuario@saude.gov.br" required autocomplete="username" />
+        </label>
+        <p class="muted" style="font-size:12px;margin-top:4px;">
+          Se o e-mail estiver cadastrado, enviaremos um link para criar uma nova senha.
+          O link vale por 1 hora.
+        </p>
+      </form>
+    `,
+    actions: `
+      <button type="button" class="btn btn--ghost" data-modal-close>Cancelar</button>
+      <button type="button" class="btn btn--primary" id="forgotSubmitBtn">Enviar link</button>
+    `
+  });
+
+  $("#forgotEmail").value = $("#loginEmail")?.value.trim() || "";
+
+  $("#forgotSubmitBtn").addEventListener("click", async () => {
+    const email = $("#forgotEmail").value.trim();
+    if (!email) {
+      toast("Informe o e-mail cadastrado.", "error");
+      return;
+    }
+
+    const btn = $("#forgotSubmitBtn");
+    if (btn.disabled) return;
+    btn.disabled = true;
+
+    try {
+      const data = await publicRequest("/auth/esqueci-senha", { body: { email } });
+      closeModal();
+      toast(data.message, "success");
+    } catch (e) {
+      toast(e.message || "Não foi possível solicitar a redefinição.", "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function openResetPasswordModal(token) {
+  openModal({
+    title: "Criar nova senha",
+    content: `
+      <form id="resetForm" novalidate>
+        <label class="field">
+          <span>Nova senha</span>
+          <input id="resetPassword" type="password" placeholder="Mínimo de 8 caracteres" required minlength="8" autocomplete="new-password" />
+        </label>
+        <label class="field">
+          <span>Confirmar nova senha</span>
+          <input id="resetPasswordConfirm" type="password" placeholder="Repita a senha" required minlength="8" autocomplete="new-password" />
+        </label>
+      </form>
+    `,
+    actions: `
+      <button type="button" class="btn btn--ghost" data-modal-close>Cancelar</button>
+      <button type="button" class="btn btn--primary" id="resetSubmitBtn">Salvar nova senha</button>
+    `
+  });
+
+  $("#resetSubmitBtn").addEventListener("click", async () => {
+    const password = $("#resetPassword").value;
+    const confirm = $("#resetPasswordConfirm").value;
+
+    if (password.length < 8) {
+      toast("A senha deve ter pelo menos 8 caracteres.", "error");
+      return;
+    }
+    if (password !== confirm) {
+      toast("As senhas não conferem.", "error");
+      return;
+    }
+
+    const btn = $("#resetSubmitBtn");
+    if (btn.disabled) return;
+    btn.disabled = true;
+
+    try {
+      const data = await publicRequest("/auth/redefinir-senha", {
+        body: { token, new_password: password }
+      });
+      closeModal();
+      toast(data.message, "success");
+    } catch (e) {
+      toast(e.message || "Não foi possível redefinir a senha.", "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// Trata os links enviados por e-mail (/confirmar-email e /redefinir-senha).
+async function handleEmailLinks() {
+  const path = location.pathname.replace(/\/+$/, "");
+  const token = new URLSearchParams(location.search).get("token");
+
+  if (!["/confirmar-email", "/redefinir-senha"].includes(path)) return;
+
+  // Tira o token da barra de endereço antes de qualquer coisa.
+  history.replaceState(null, "", "/");
+
+  if (!token) {
+    toast("Link inválido ou incompleto.", "error");
+    return;
+  }
+
+  if (path === "/redefinir-senha") {
+    openResetPasswordModal(token);
+    return;
+  }
+
+  try {
+    const data = await publicRequest(
+      `/auth/verificar-email/confirmar?token=${encodeURIComponent(token)}`,
+      { method: "GET" }
+    );
+    toast(data.message, "success");
+  } catch (e) {
+    toast(e.message || "Não foi possível confirmar o e-mail.", "error");
+  }
+}
+
 $("#forgotPasswordLink")?.addEventListener("click", (e) => {
   e.preventDefault();
-  toast("Solicite a redefinição de senha ao Administrador ou RH.", "");
+  openForgotPasswordModal();
 });
+
+handleEmailLinks();
 
 function openRegisterModal() {
   openModal({
