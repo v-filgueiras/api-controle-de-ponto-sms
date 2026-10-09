@@ -1,17 +1,12 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
+from config import MESES
 from database.connect import get_db
 from deps import require_role
 from models import Fechamentos, Units, Users
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-MESES = [
-    "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
-    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
-]
-
 
 def _competencia_atual() -> str:
     from datetime import datetime

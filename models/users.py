@@ -1,7 +1,7 @@
 from database.connect import Base
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, LargeBinary
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, LargeBinary, CheckConstraint
 from sqlalchemy.orm import relationship
 
 class Users(Base):
@@ -26,6 +26,16 @@ class Users(Base):
     profile_photo_mime = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        CheckConstraint(
+            "perfil IN ('admin','rh','coordinator')", name="ck_users_perfil"
+        ),
+        CheckConstraint(
+            "approval_status IN ('pendente','aprovado','rejeitado')",
+            name="ck_users_approval_status",
+        ),
+    )
 
     unit = relationship("Units", back_populates="users")
     approved_by = relationship("Users", remote_side=[id])

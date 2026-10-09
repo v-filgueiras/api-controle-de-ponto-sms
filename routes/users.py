@@ -1,21 +1,20 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
-from passlib.context import CryptContext
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database.connect import get_db
 from deps import get_current_user, require_role
 from email_utils import email_tem_dominio_real
-from models import HistoryLog, Units, Users
+from history import registrar_evento
+from models import Units, Users
 from routes.auth_extra import criar_verificacao_e_enviar
 from schemas.users import UserCreate, UserOut, UserUpdate
+from security import buscar_usuario_por_email, criar_access_token, normalizar_email, pwd_context, verificar_senha
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 MAX_PROFILE_PHOTO_SIZE = 2 * 1024 * 1024
 ALLOWED_PROFILE_PHOTO_TYPES = {
@@ -61,15 +60,7 @@ def registrar_acao_administrativa(
     action: str,
     unit_id: int | None = None,
 ):
-    db.add(
-        HistoryLog(
-            user_id=actor.id,
-            action=action,
-            fechamento_id=None,
-            unit_id=unit_id,
-            status_snapshot=None,
-        )
-    )
+    registrar_evento(db, actor.id, action, unit_id=unit_id)
 
 
 def validar_gerenciamento_de_coordenador(actor: Users, target: Users):
@@ -86,13 +77,20 @@ def alterar_minha_senha(
     db: Session = Depends(get_db),
     user: Users = Depends(get_current_user),
 ):
-    if not pwd_context.verify(payload.current_password, user.hash_passwd):
+    if not verificar_senha(payload.current_password, user.hash_passwd):
         raise HTTPException(status_code=400, detail="Senha atual incorreta.")
 
     user.hash_passwd = pwd_context.hash(payload.new_password)
+    registrar_acao_administrativa(db, user, "Alterou a própria senha", user.unit_id)
     db.commit()
 
-    return {"message": "Senha alterada com sucesso."}
+    # O hash mudou, então o token atual deixou de valer: devolve um novo para
+    # o usuário continuar logado neste navegador.
+    return {
+        "message": "Senha alterada com sucesso.",
+        "access_token": criar_access_token(user),
+        "token_type": "bearer",
+    }
 
 
 @router.put("/{user_id}/senha")
@@ -100,13 +98,16 @@ def redefinir_senha_usuario(
     user_id: int,
     payload: AdminPasswordUpdate,
     db: Session = Depends(get_db),
-    _: Users = Depends(require_role("admin")),
+    actor: Users = Depends(require_role("admin")),
 ):
     user = db.query(Users).filter(Users.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
     user.hash_passwd = pwd_context.hash(payload.password)
+    registrar_acao_administrativa(
+        db, actor, f"Redefiniu a senha de: {user.name}", user.unit_id
+    )
     db.commit()
 
     return {"message": "Senha redefinida com sucesso."}
@@ -305,8 +306,9 @@ def obter_usuario(
 @router.post("", response_model=UserOut, status_code=201)
 def criar_usuario(
     payload: UserCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: Users = Depends(require_role("admin")),
+    actor: Users = Depends(require_role("admin")),
 ):
     if payload.perfil == "coordinator" and not payload.unit_id:
         raise HTTPException(status_code=422, detail="Coordenador precisa de unit_id.")
@@ -320,16 +322,18 @@ def criar_usuario(
         if not unit:
             raise HTTPException(status_code=422, detail="Unidade inválida ou inativa.")
 
-    if db.query(Users).filter(Users.email == payload.email).first():
+    email = normalizar_email(str(payload.email))
+
+    if buscar_usuario_por_email(db, email):
         raise HTTPException(status_code=409, detail="Já existe um usuário com esse e-mail.")
 
-    email_valido, motivo = email_tem_dominio_real(str(payload.email))
+    email_valido, motivo = email_tem_dominio_real(email)
     if not email_valido:
         raise HTTPException(status_code=422, detail=f"E-mail inválido ou com domínio inexistente: {motivo}")
 
     user = Users(
-        name=payload.name,
-        email=payload.email,
+        name=payload.name.strip(),
+        email=email,
         hash_passwd=pwd_context.hash(payload.password),
         perfil=payload.perfil,
         unit_id=payload.unit_id,
@@ -338,11 +342,15 @@ def criar_usuario(
         approval_status="aprovado",
     )
     db.add(user)
+    db.flush()
+
+    registrar_acao_administrativa(
+        db, actor, f"Criou usuário: {user.name} ({user.perfil})", user.unit_id
+    )
     db.commit()
     db.refresh(user)
 
-    criar_verificacao_e_enviar(db, user)
-    db.commit()
+    criar_verificacao_e_enviar(db, user, background_tasks)
 
     return user
 
@@ -352,7 +360,7 @@ def atualizar_usuario(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    _: Users = Depends(require_role("admin")),
+    actor: Users = Depends(require_role("admin")),
 ):
     user = db.query(Users).filter(Users.id == user_id).first()
     if not user:
@@ -361,13 +369,18 @@ def atualizar_usuario(
     dados = payload.model_dump(exclude_unset=True)
 
     if "email" in dados:
-        existente = (
-            db.query(Users)
-            .filter(Users.email == dados["email"], Users.id != user_id)
-            .first()
-        )
-        if existente:
+        dados["email"] = normalizar_email(str(dados["email"]))
+        existente = buscar_usuario_por_email(db, dados["email"])
+        if existente and existente.id != user_id:
             raise HTTPException(status_code=409, detail="Já existe um usuário com esse e-mail.")
+
+        if dados["email"] != normalizar_email(user.email):
+            email_valido, motivo = email_tem_dominio_real(dados["email"])
+            if not email_valido:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"E-mail inválido ou com domínio inexistente: {motivo}",
+                )
 
     perfil = dados.get("perfil", user.perfil)
     unit_id = dados.get("unit_id", user.unit_id)
@@ -394,6 +407,12 @@ def atualizar_usuario(
         if hasattr(user, campo):
             setattr(user, campo, valor)
 
+    registrar_acao_administrativa(
+        db,
+        actor,
+        f"Editou usuário: {user.name} ({', '.join(sorted(dados))})",
+        user.unit_id,
+    )
     db.commit()
     db.refresh(user)
     return user

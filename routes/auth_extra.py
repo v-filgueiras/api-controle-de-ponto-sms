@@ -1,23 +1,18 @@
 """Confirmação de e-mail e recuperação de senha.
 
-Dois recursos:
-
-1) Confirmação de e-mail: ao criar uma conta (bootstrap do primeiro admin ou
-   usuário criado por um admin), o e-mail entra como "não confirmado". O
-   login é bloqueado até o usuário clicar no link enviado por e-mail.
-   Usuários que já existiam antes deste recurso não são afetados: sem
-   registro em email_verifications, o login trata como já confirmado.
+1) Confirmação de e-mail: ao criar uma conta, um link de confirmação é
+   enviado por e-mail. A confirmação fica registrada em email_verifications,
+   mas NÃO bloqueia o login: o acesso é controlado pela aprovação do
+   RH/administração (users.approval_status).
 
 2) Esqueci minha senha: gera um token de uso único, válido por 1 hora,
    enviado por e-mail, que permite definir uma nova senha sem precisar da
    senha atual. As respostas nunca revelam se um e-mail existe ou não no
-   sistema, para não permitir enumeração de contas.
+   sistema, para não permitir enumeração de contas. Redefinir a senha
+   encerra todas as sessões abertas (ver security.senha_fingerprint).
 
-Assim como mensagens.py, os modelos ficam neste arquivo para não mexer em
-models.py. Como este módulo é importado pelo main.py antes do
-Base.metadata.create_all(), as tabelas "email_verifications" e
-"password_reset_tokens" são criadas automaticamente na próxima
-inicialização.
+Os e-mails são enviados em segundo plano (BackgroundTasks) para a
+requisição não ficar presa no SMTP.
 """
 
 import hashlib
@@ -25,48 +20,25 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
-from passlib.context import CryptContext
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Session
 
-from database.connect import Base, get_db
+from database.connect import get_db
 from email_utils import enviar_email_confirmacao, enviar_email_redefinicao_senha
-from models import HistoryLog, Users
+from history import registrar_evento
+from models import EmailVerifications, PasswordResetTokens, Users
+from rate_limit import limite_por_ip
+from security import buscar_usuario_por_email, pwd_context
 
 logger = logging.getLogger("auth_extra")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 VERIFICACAO_VALIDADE_HORAS = 24
 VERIFICACAO_REENVIO_MINIMO_SEGUNDOS = 60
 RESET_SENHA_VALIDADE_MINUTOS = 60
-
-
-class EmailVerifications(Base):
-    __tablename__ = "email_verifications"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
-    verified = Column(Boolean, nullable=False, default=False)
-    verified_at = Column(DateTime, nullable=True)
-    token_hash = Column(String(64), nullable=True, index=True)
-    token_expires_at = Column(DateTime, nullable=True)
-    last_sent_at = Column(DateTime, nullable=True)
-
-
-class PasswordResetTokens(Base):
-    __tablename__ = "password_reset_tokens"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    token_hash = Column(String(64), nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.now)
-    expires_at = Column(DateTime, nullable=False)
-    used_at = Column(DateTime, nullable=True)
+RESET_SENHA_REENVIO_MINIMO_SEGUNDOS = 60
 
 
 class SolicitarVerificacaoIn(BaseModel):
@@ -90,16 +62,20 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def criar_verificacao_e_enviar(db: Session, user: Users) -> None:
-    """Gera um novo token de confirmação para `user` e envia por e-mail.
+def _enviar_seguro(envio, destinatario: str, nome: str, token: str, user_id: int) -> None:
+    """Roda em segundo plano: falha de SMTP só vira log, nunca erro de API."""
+    try:
+        envio(destinatario, nome, token)
+    except Exception:
+        logger.warning(
+            "Falha ao enviar e-mail para user_id=%s", user_id, exc_info=True
+        )
 
-    Usado tanto na criação de conta quanto no reenvio manual. O registro de
-    verificação é salvo ANTES de tentar enviar o e-mail — assim, mesmo que
-    o envio falhe (SMTP mal configurado, fora do ar etc.), o login do
-    usuário continua bloqueado até uma confirmação de verdade acontecer.
-    Falha de envio só é registrada em log (não no banco), para não haver
-    risco de estourar o tamanho de nenhuma coluna.
-    """
+
+def criar_verificacao_e_enviar(
+    db: Session, user: Users, background_tasks: BackgroundTasks
+) -> None:
+    """Gera um novo token de confirmação para `user` e agenda o envio."""
     verificacao = (
         db.query(EmailVerifications).filter(EmailVerifications.user_id == user.id).first()
     )
@@ -116,16 +92,15 @@ def criar_verificacao_e_enviar(db: Session, user: Users) -> None:
 
     db.commit()
 
-    try:
-        enviar_email_confirmacao(user.email, user.name, token)
-    except Exception:
-        logger.warning(
-            "Falha ao enviar e-mail de confirmação para user_id=%s (%s)",
-            user.id, user.email, exc_info=True,
-        )
+    background_tasks.add_task(
+        _enviar_seguro, enviar_email_confirmacao, user.email, user.name, token, user.id
+    )
 
 
-@router.get("/verificar-email/confirmar")
+@router.get(
+    "/verificar-email/confirmar",
+    dependencies=[Depends(limite_por_ip(30, 15 * 60))],
+)
 def confirmar_email(token: str, db: Session = Depends(get_db)):
     token_hash = _hash_token(token)
 
@@ -148,26 +123,27 @@ def confirmar_email(token: str, db: Session = Depends(get_db)):
     verificacao.token_hash = None
     verificacao.token_expires_at = None
 
-    db.add(HistoryLog(
-        user_id=verificacao.user_id,
-        action="Confirmou o e-mail cadastrado",
-        fechamento_id=None,
-        unit_id=None,
-        status_snapshot=None,
-    ))
+    registrar_evento(db, verificacao.user_id, "Confirmou o e-mail cadastrado")
 
     db.commit()
 
     return {"message": "E-mail confirmado com sucesso. Você já pode acessar o sistema."}
 
 
-@router.post("/verificar-email/reenviar")
-def reenviar_verificacao(payload: SolicitarVerificacaoIn, db: Session = Depends(get_db)):
+@router.post(
+    "/verificar-email/reenviar",
+    dependencies=[Depends(limite_por_ip(5, 15 * 60))],
+)
+def reenviar_verificacao(
+    payload: SolicitarVerificacaoIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     mensagem_generica = {
         "message": "Se o e-mail informado estiver cadastrado e pendente de confirmação, reenviamos o link."
     }
 
-    user = db.query(Users).filter(Users.email == str(payload.email)).first()
+    user = buscar_usuario_por_email(db, str(payload.email))
     if not user:
         return mensagem_generica
 
@@ -184,20 +160,39 @@ def reenviar_verificacao(payload: SolicitarVerificacaoIn, db: Session = Depends(
     ):
         return mensagem_generica
 
-    criar_verificacao_e_enviar(db, user)
-    db.commit()
+    criar_verificacao_e_enviar(db, user, background_tasks)
 
     return mensagem_generica
 
 
-@router.post("/esqueci-senha")
-def esqueci_senha(payload: EsqueciSenhaIn, db: Session = Depends(get_db)):
+@router.post(
+    "/esqueci-senha",
+    dependencies=[Depends(limite_por_ip(5, 15 * 60))],
+)
+def esqueci_senha(
+    payload: EsqueciSenhaIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     mensagem_generica = {
         "message": "Se o e-mail informado estiver cadastrado, enviamos instruções para redefinir a senha."
     }
 
-    user = db.query(Users).filter(Users.email == str(payload.email)).first()
+    user = buscar_usuario_por_email(db, str(payload.email))
     if not user or not user.status:
+        return mensagem_generica
+
+    ultimo = (
+        db.query(PasswordResetTokens)
+        .filter(PasswordResetTokens.user_id == user.id)
+        .order_by(PasswordResetTokens.created_at.desc())
+        .first()
+    )
+    if (
+        ultimo
+        and (datetime.now() - ultimo.created_at).total_seconds()
+        < RESET_SENHA_REENVIO_MINIMO_SEGUNDOS
+    ):
         return mensagem_generica
 
     token = _gerar_token()
@@ -209,18 +204,17 @@ def esqueci_senha(payload: EsqueciSenhaIn, db: Session = Depends(get_db)):
     ))
     db.commit()
 
-    try:
-        enviar_email_redefinicao_senha(user.email, user.name, token)
-    except Exception:
-        logger.warning(
-            "Falha ao enviar e-mail de redefinição de senha para user_id=%s (%s)",
-            user.id, user.email, exc_info=True,
-        )
+    background_tasks.add_task(
+        _enviar_seguro, enviar_email_redefinicao_senha, user.email, user.name, token, user.id
+    )
 
     return mensagem_generica
 
 
-@router.post("/redefinir-senha")
+@router.post(
+    "/redefinir-senha",
+    dependencies=[Depends(limite_por_ip(10, 15 * 60))],
+)
 def redefinir_senha(payload: RedefinirSenhaIn, db: Session = Depends(get_db)):
     token_hash = _hash_token(payload.token)
 
@@ -247,13 +241,9 @@ def redefinir_senha(payload: RedefinirSenhaIn, db: Session = Depends(get_db)):
         PasswordResetTokens.used_at.is_(None),
     ).update({PasswordResetTokens.used_at: datetime.now()}, synchronize_session=False)
 
-    db.add(HistoryLog(
-        user_id=user.id,
-        action="Redefiniu a senha via recuperação por e-mail",
-        fechamento_id=None,
-        unit_id=user.unit_id,
-        status_snapshot=None,
-    ))
+    registrar_evento(
+        db, user.id, "Redefiniu a senha via recuperação por e-mail", unit_id=user.unit_id
+    )
 
     db.commit()
 

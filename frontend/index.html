@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/styles.css?v=20260922-v14" />
+  <link rel="stylesheet" href="static/styles.css?v=20261009-v15" />
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -112,14 +112,15 @@
 
     <main class="main">
       <header class="topbar">
-        <button id="menuBtn" class="menu-btn" aria-label="Abrir menu">☰</button>
+        <button id="menuBtn" class="menu-btn" aria-label="Abrir menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg></button>
         <div>
           <span class="breadcrumb" id="breadcrumb">Início</span>
           <h2 id="pageTitle">Painel</h2>
         </div>
         <div class="topbar-actions">
+          <button class="icon-button" id="themeBtn" type="button" title="Usar tema escuro" aria-pressed="false" aria-label="Alternar tema"><svg class="ic ic-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><svg class="ic ic-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
           <div class="notif-wrap" id="notifWrap">
-            <button class="icon-button notification" id="notifBtn" title="Notificações" aria-haspopup="true" aria-expanded="false">♢<span id="notifBadge" class="hidden">0</span></button>
+            <button class="icon-button notification" id="notifBtn" title="Notificações" aria-haspopup="true" aria-expanded="false" aria-label="Notificações"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="notifBadge" class="hidden">0</span></button>
             <div class="notif-panel hidden" id="notifPanel">
               <div class="notif-panel__head">
                 <strong>Notificações</strong>
@@ -138,6 +139,6 @@
 
   <div id="modalRoot"></div>
 
-  <script src="static/app.js?v=20260922-v15"></script>
+  <script src="static/app.js?v=20261009-v17"></script>
 </body>
 </html>

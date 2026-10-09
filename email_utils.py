@@ -13,6 +13,7 @@ e a maior parte dos e-mails inventados/com erro de digitação).
 
 import os
 import smtplib
+from html import escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -24,7 +25,9 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() != "false"
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5500")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5500").rstrip("/")
+# Desligar só em testes automatizados (evita consulta DNS/MX).
+CHECAR_ENTREGA_EMAIL = os.getenv("EMAIL_CHECK_DELIVERABILITY", "true").lower() != "false"
 
 
 def email_tem_dominio_real(email: str) -> tuple[bool, str | None]:
@@ -35,7 +38,7 @@ def email_tem_dominio_real(email: str) -> tuple[bool, str | None]:
     com erro de digitação óbvio, ou sem servidor de e-mail configurado.
     """
     try:
-        validate_email(email, check_deliverability=True)
+        validate_email(email, check_deliverability=CHECAR_ENTREGA_EMAIL)
         return True, None
     except EmailNotValidError as exc:
         return False, str(exc)
@@ -63,7 +66,7 @@ def _enviar(destinatario: str, assunto: str, corpo_html: str) -> None:
 def enviar_email_confirmacao(destinatario: str, nome: str, token: str) -> None:
     link = f"{FRONTEND_URL}/confirmar-email?token={token}"
     corpo_html = f"""
-    <p>Olá, {nome}.</p>
+    <p>Olá, {escape(nome)}.</p>
     <p>Confirme seu e-mail para ativar seu acesso ao Controle de Ponto:</p>
     <p><a href="{link}">Confirmar e-mail</a></p>
     <p>Se o botão não funcionar, copie e cole este link no navegador:<br>{link}</p>
@@ -75,7 +78,7 @@ def enviar_email_confirmacao(destinatario: str, nome: str, token: str) -> None:
 def enviar_email_redefinicao_senha(destinatario: str, nome: str, token: str) -> None:
     link = f"{FRONTEND_URL}/redefinir-senha?token={token}"
     corpo_html = f"""
-    <p>Olá, {nome}.</p>
+    <p>Olá, {escape(nome)}.</p>
     <p>Recebemos uma solicitação para redefinir sua senha no Controle de Ponto.</p>
     <p><a href="{link}">Redefinir senha</a></p>
     <p>Se o botão não funcionar, copie e cole este link no navegador:<br>{link}</p>

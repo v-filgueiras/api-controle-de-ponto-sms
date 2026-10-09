@@ -7,15 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from database.connect import get_db
+from config import MESES
 from deps import require_role
 from models import Fechamentos, HistoryLog, Users
 
 router = APIRouter(prefix="/auditoria", tags=["auditoria"])
-
-MESES = [
-    "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
-    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
-]
 
 CAMPOS = ("dt", "bh", "he", "an", "gr", "ins", "at")
 LABELS = {
