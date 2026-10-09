@@ -2,41 +2,20 @@
 
 Uma conversa por unidade: o coordenador da unidade conversa com o RH.
 Qualquer pessoa do RH enxerga e responde a conversa de qualquer unidade.
-
-O model fica neste arquivo para ficar independente do seu models.py.
-Como o main.py importa este módulo antes de Base.metadata.create_all(),
-a tabela "mensagens" é criada automaticamente na próxima inicialização
-(create_all não altera tabelas que já existem, então nada do que você
-tem hoje é afetado).
 """
 
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Index, Integer, String, Text, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database.connect import Base, get_db
+from database.connect import get_db
 from deps import require_role
-from models import Units, Users
+from models import Mensagens, Units, Users
 
 router = APIRouter(tags=["mensagens"])
-
-
-class Mensagens(Base):
-    __tablename__ = "mensagens"
-
-    id = Column(Integer, primary_key=True, index=True)
-    unit_id = Column(Integer, nullable=False)
-    sender_id = Column(Integer, nullable=False)
-    sender_perfil = Column(String(20), nullable=False)  # "coordinator" | "rh"
-    body = Column(Text, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.now)
-    # None = ainda não lida pelo outro lado da conversa
-    read_at = Column(DateTime, nullable=True)
-
-    __table_args__ = (Index("ix_mensagens_unit_id_id", "unit_id", "id"),)
 
 
 class MensagemIn(BaseModel):

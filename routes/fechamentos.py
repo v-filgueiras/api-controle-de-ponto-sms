@@ -5,26 +5,22 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from config import MESES, UPLOAD_DIR
 from database.connect import get_db
 from deps import get_current_user, require_role
-from models import Fechamentos, Documents, EditRequests, PointRows, Units, Users, HistoryLog
+from history import registrar_evento
+from models import Fechamentos, Documents, EditRequests, PointRows, Units, Users
 from schemas.fechamentos import DecisionIn, FechamentoOut, FechamentoRowsUpdate, FechamentoSubmit
 
 router = APIRouter(tags=["fechamentos"])
-
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
 
 # Limite de tamanho para o documento de fechamento (PDF assinado).
 MAX_DOCUMENT_SIZE = 15 * 1024 * 1024  # 15 MB
 
 PDF_MAGIC_BYTES = b"%PDF-"
-
-MESES = [
-    "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
-    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
-]
 
 
 def competencia_atual() -> str:
@@ -33,13 +29,7 @@ def competencia_atual() -> str:
 
 
 def registrar_historico(db: Session, user: Users, action: str, fechamento: Fechamentos):
-    db.add(HistoryLog(
-        user_id=user.id,
-        action=action,
-        fechamento_id=fechamento.id,
-        unit_id=fechamento.unit_id,
-        status_snapshot=fechamento.status,
-    ))
+    registrar_evento(db, user.id, action, fechamento=fechamento)
 
 
 def _checar_acesso_unidade(user: Users, unit_id: int):
@@ -47,25 +37,44 @@ def _checar_acesso_unidade(user: Users, unit_id: int):
         raise HTTPException(status_code=403, detail="Você só pode acessar a própria unidade.")
 
 
-def _obter_ou_criar_fechamento(db: Session, unit_id: int) -> Fechamentos:
-    competence = competencia_atual()
-    fechamento = (
+def _buscar_fechamento_atual(db: Session, unit_id: int, competence: str) -> Fechamentos | None:
+    return (
         db.query(Fechamentos)
         .options(joinedload(Fechamentos.rows), joinedload(Fechamentos.document))
         .filter(Fechamentos.unit_id == unit_id, Fechamentos.competence == competence)
         .first()
     )
+
+
+def _obter_fechamento_atual(db: Session, unit_id: int, criar: bool) -> Fechamentos:
+    """Devolve o fechamento da competência atual.
+
+    Só cria o rascunho quando `criar` é verdadeiro (coordenador da própria
+    unidade); para os demais perfis a consulta nunca grava nada.
+    """
+    competence = competencia_atual()
+    fechamento = _buscar_fechamento_atual(db, unit_id, competence)
     if fechamento:
         return fechamento
+
+    if not criar:
+        raise HTTPException(
+            status_code=404,
+            detail="A unidade ainda não iniciou o fechamento desta competência.",
+        )
 
     if not db.query(Units).filter(Units.id == unit_id, Units.active.is_(True)).first():
         raise HTTPException(status_code=404, detail="Unidade não encontrada ou inativa.")
 
-    fechamento = Fechamentos(unit_id=unit_id, competence=competence, status="rascunho")
-    db.add(fechamento)
-    db.commit()
-    db.refresh(fechamento)
-    return fechamento
+    db.add(Fechamentos(unit_id=unit_id, competence=competence, status="rascunho"))
+    try:
+        db.commit()
+    except IntegrityError:
+        # Outra requisição criou o mesmo fechamento ao mesmo tempo
+        # (constraint única unit_id + competence): usa o que já existe.
+        db.rollback()
+
+    return _buscar_fechamento_atual(db, unit_id, competence)
 
 
 @router.get("/unidades/{unit_id}/fechamento-atual", response_model=FechamentoOut)
@@ -75,7 +84,23 @@ def obter_fechamento_atual(
     user: Users = Depends(get_current_user),
 ):
     _checar_acesso_unidade(user, unit_id)
-    return _obter_ou_criar_fechamento(db, unit_id)
+    return _obter_fechamento_atual(db, unit_id, criar=user.perfil == "coordinator")
+
+
+_CAMPOS_LINHA = (
+    "nome", "cargo", "periodo", "dt", "bh", "he", "an", "gr", "ins", "at", "faltas", "observacao"
+)
+
+
+def _resumir_alteracao_linhas(linhas_atuais, novas: list[dict]) -> str:
+    antes = {l.matricula: {c: getattr(l, c) for c in _CAMPOS_LINHA} for l in linhas_atuais}
+    depois = {n["matricula"]: {c: n[c] for c in _CAMPOS_LINHA} for n in novas}
+
+    incluidos = len(depois.keys() - antes.keys())
+    removidos = len(antes.keys() - depois.keys())
+    alterados = sum(1 for m in depois.keys() & antes.keys() if depois[m] != antes[m])
+
+    return f"{len(novas)} servidor(es): +{incluidos} -{removidos} ~{alterados}"
 
 
 @router.put("/fechamentos/{fechamento_id}/rows", response_model=FechamentoOut)
@@ -83,7 +108,7 @@ def atualizar_linhas(
     fechamento_id: int,
     payload: FechamentoRowsUpdate,
     db: Session = Depends(get_db),
-    user: Users = Depends(get_current_user),
+    user: Users = Depends(require_role("coordinator")),
 ):
     fechamento = db.query(Fechamentos).filter(Fechamentos.id == fechamento_id).first()
     if not fechamento:
@@ -92,10 +117,14 @@ def atualizar_linhas(
     if fechamento.status in ("pendente", "aprovado"):
         raise HTTPException(status_code=409, detail="Este fechamento está bloqueado para edição.")
 
-    db.query(PointRows).filter(PointRows.fechamento_id == fechamento_id).delete()
-    for linha in payload.rows:
-        db.add(PointRows(fechamento_id=fechamento_id, **linha.model_dump()))
+    novas = [linha.model_dump() for linha in payload.rows]
+    resumo = _resumir_alteracao_linhas(fechamento.rows, novas)
 
+    db.query(PointRows).filter(PointRows.fechamento_id == fechamento_id).delete()
+    for linha in novas:
+        db.add(PointRows(fechamento_id=fechamento_id, **linha))
+
+    registrar_historico(db, user, f"Atualizou linhas do ponto ({resumo})", fechamento)
     db.commit()
     db.refresh(fechamento)
     return fechamento
@@ -106,7 +135,7 @@ async def enviar_documento(
     fechamento_id: int,
     file: UploadFile,
     db: Session = Depends(get_db),
-    user: Users = Depends(get_current_user),
+    user: Users = Depends(require_role("coordinator")),
 ):
     fechamento = db.query(Fechamentos).filter(Fechamentos.id == fechamento_id).first()
     if not fechamento:
@@ -154,7 +183,15 @@ async def enviar_documento(
     db.add(documento)
     db.flush()  # gera documento.id sem precisar commitar ainda
 
+    substituiu = fechamento.document_id
     fechamento.document_id = documento.id
+    registrar_historico(
+        db,
+        user,
+        "Anexou documento assinado"
+        + (f" (substituiu o documento #{substituiu})" if substituiu else ""),
+        fechamento,
+    )
     db.commit()
     db.refresh(fechamento)
     return fechamento
@@ -165,7 +202,7 @@ def submeter_fechamento(
     fechamento_id: int,
     payload: FechamentoSubmit,
     db: Session = Depends(get_db),
-    user: Users = Depends(get_current_user),
+    user: Users = Depends(require_role("coordinator")),
 ):
     fechamento = (
         db.query(Fechamentos)
@@ -198,6 +235,8 @@ def submeter_fechamento(
 @router.get("/aprovacoes", response_model=list[FechamentoOut])
 def listar_aprovacoes(
     status: str | None = None,
+    limit: int = 1000,
+    offset: int = 0,
     db: Session = Depends(get_db),
     _: Users = Depends(require_role("admin", "rh")),
 ):
@@ -205,7 +244,8 @@ def listar_aprovacoes(
     query = query.filter(Fechamentos.status != "rascunho")
     if status:
         query = query.filter(Fechamentos.status == status)
-    return query.all()
+    limit = max(1, min(limit, 2000))
+    return query.order_by(Fechamentos.id.desc()).offset(max(0, offset)).limit(limit).all()
 
 
 @router.get("/fechamentos/{fechamento_id}", response_model=FechamentoOut)
@@ -233,7 +273,10 @@ def decidir_fechamento(
     db: Session = Depends(get_db),
     user: Users = Depends(require_role("admin", "rh")),
 ):
-    payload.validar_nota_obrigatoria()
+    try:
+        payload.validar_nota_obrigatoria()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
     fechamento = db.query(Fechamentos).filter(Fechamentos.id == fechamento_id).first()
     if not fechamento:
@@ -271,19 +314,10 @@ class EditRequestDecision(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
-def edit_request_to_dict(req: EditRequests, db: Session):
-    fechamento = (
-        db.query(Fechamentos)
-        .options(joinedload(Fechamentos.unit))
-        .filter(Fechamentos.id == req.fechamento_id)
-        .first()
-    )
-    requester = db.query(Users).filter(Users.id == req.requested_by_id).first()
-    decided_by = (
-        db.query(Users).filter(Users.id == req.decided_by_id).first()
-        if req.decided_by_id
-        else None
-    )
+def edit_request_to_dict(req: EditRequests):
+    fechamento = req.fechamento
+    requester = req.requested_by
+    decided_by = req.decided_by
 
     return {
         "id": req.id,
@@ -351,7 +385,7 @@ def solicitar_edicao(
     db.commit()
     db.refresh(req)
 
-    return edit_request_to_dict(req, db)
+    return edit_request_to_dict(req)
 
 
 @router.get("/fechamentos/{fechamento_id}/solicitacao-edicao")
@@ -373,7 +407,7 @@ def obter_solicitacao_edicao_do_fechamento(
         .first()
     )
 
-    return edit_request_to_dict(req, db) if req else None
+    return edit_request_to_dict(req) if req else None
 
 
 @router.get("/solicitacoes-edicao")
@@ -382,13 +416,17 @@ def listar_solicitacoes_edicao(
     db: Session = Depends(get_db),
     _: Users = Depends(require_role("rh")),
 ):
-    query = db.query(EditRequests)
+    query = db.query(EditRequests).options(
+        joinedload(EditRequests.fechamento).joinedload(Fechamentos.unit),
+        joinedload(EditRequests.requested_by),
+        joinedload(EditRequests.decided_by),
+    )
 
     if status:
         query = query.filter(EditRequests.status == status)
 
     requests = query.order_by(EditRequests.created_at.desc()).all()
-    return [edit_request_to_dict(req, db) for req in requests]
+    return [edit_request_to_dict(req) for req in requests]
 
 
 @router.post("/solicitacoes-edicao/{request_id}/decisao")

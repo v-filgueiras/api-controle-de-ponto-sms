@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from database.connect import get_db
 from deps import get_current_user
+from history import registrar_evento
 from models import Documents, Fechamentos, Users
 from schemas.documents import DocumentOut
 
@@ -51,11 +52,17 @@ def baixar_documento(
     if not os.path.isfile(documento.storage_path):
         raise HTTPException(status_code=404, detail="Arquivo não encontrado no armazenamento.")
 
+    fechamento = (
+        db.query(Fechamentos).filter(Fechamentos.document_id == document_id).first()
+    )
+    registrar_evento(db, user.id, "Visualizou documento assinado", fechamento=fechamento)
+    db.commit()
+
+    # content_disposition_type="inline" deixa o Starlette montar o header com
+    # o escape correto do nome (acentos, aspas), em vez de concatenar à mão.
     return FileResponse(
         path=documento.storage_path,
         media_type=documento.mime_type,
         filename=documento.filename,
-        headers={
-            "Content-Disposition": f'inline; filename="{documento.filename}"'
-        },
+        content_disposition_type="inline",
     )

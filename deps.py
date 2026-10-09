@@ -1,4 +1,4 @@
-import os
+import hmac
 from typing import Callable
 
 from fastapi import Depends, HTTPException, status
@@ -6,20 +6,13 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from config import ALGORITHM, SECRET_KEY
 from database.connect import get_db
 from models import Users
+from security import senha_fingerprint
 
 # A rota usada para obter o token.
-# Se sua rota de login tiver outro caminho, altere aqui.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise RuntimeError(
-        "SECRET_KEY não configurada. Defina a variável de ambiente SECRET_KEY "
-        "antes de iniciar o sistema (nunca use um valor padrão em produção)."
-    )
-ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 
 def get_current_user(
@@ -42,6 +35,7 @@ def get_current_user(
             raise credentials_exception
 
         user_id = int(user_id)
+        pv = str(payload.get("pv") or "")
 
     except (JWTError, ValueError, TypeError):
         raise credentials_exception
@@ -49,6 +43,10 @@ def get_current_user(
     user = db.query(Users).filter(Users.id == user_id).first()
 
     if user is None:
+        raise credentials_exception
+
+    # Token emitido antes da última troca de senha: sessão encerrada.
+    if not hmac.compare_digest(pv, senha_fingerprint(user.hash_passwd)):
         raise credentials_exception
 
     if not user.status:
